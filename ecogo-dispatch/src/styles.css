@@ -1,0 +1,108 @@
+:root {
+  --bg: #1a1a18;
+  --panel: #232320;
+  --panel2: #2b2b27;
+  --border: #3a3a35;
+  --text: #e8e6df;
+  --muted: #9c9a92;
+  --accent: #c96442;
+  --warn: #d98a2b;
+  --danger: #d8503a;
+  --ok: #639922;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 600; }
+.logout {
+  margin-left: auto;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.err { color: var(--danger); font-size: 13px; }
+.err.inline { font-weight: 500; }
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 14px 18px;
+}
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.kpi .l { font-size: 12px; color: var(--muted); }
+.kpi .v { font-size: 24px; font-weight: 600; margin-top: 4px; }
+.kpi .v.warn { color: var(--danger); }
+
+.cockpit { height: 100vh; display: flex; flex-direction: column; }
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr 300px;
+  gap: 12px;
+  padding: 0 18px 18px;
+  min-height: 0;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel h3 {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.rows, .cands { overflow-y: auto; }
+.row { padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.row:hover { background: var(--panel2); }
+.row.sel { background: #2f2a26; box-shadow: inset 2px 0 0 var(--accent); }
+.route { font-weight: 500; font-size: 13px; }
+.meta { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.claimed { margin-top: 5px; font-size: 11px; color: var(--warn); }
+.sla { font-size: 11px; padding: 1px 8px; border-radius: 20px; background: #2f2f2a; color: var(--muted); }
+.sla.warn { background: #3a2f1d; color: var(--warn); }
+.sla.brk { background: #3a201c; color: var(--danger); }
+.empty { padding: 20px 14px; color: var(--muted); font-size: 13px; }
+
+.map { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); min-height: 0; }
+.leaflet-container { background: #1a1a18; }
+
+.selhead { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.selroute { font-size: 13px; font-weight: 500; flex: 1; }
+.claim { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
+.claim:disabled { opacity: 0.5; cursor: default; }
+.cand { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.cand.top { box-shadow: inset 2px 0 0 var(--accent); }
+.nm { font-weight: 500; font-size: 13px; display: flex; justify-content: space-between; }
+.star { color: var(--warn); }
+.kv { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.kv b { color: var(--text); font-weight: 500; }
+.assign { margin-top: 9px; width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 7px; cursor: pointer; font-size: 13px; }
+
+.login { height: 100vh; display: flex; align-items: center; justify-content: center; }
+.loginbox { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.loginbox h1 { font-size: 18px; margin: 0 0 8px; }
+.loginbox input { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; color: var(--text); font-size: 14px; }
+.loginbox button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 14px; }
+.devcode { font-size: 12px; color: var(--ok); background: #1f2a17; padding: 6px 10px; border-radius: 8px; }

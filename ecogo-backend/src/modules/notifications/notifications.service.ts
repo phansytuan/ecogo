@@ -1,0 +1,37 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service';
+import { NOTIFICATION_PROVIDER, NotificationProvider } from './notification.provider';
+
+@Injectable()
+export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    private readonly db: DatabaseService,
+    @Inject(NOTIFICATION_PROVIDER) private readonly provider: NotificationProvider,
+  ) {}
+
+  async registerToken(userId: string, token: string, platform?: string) {
+    return this.db.one(
+      `INSERT INTO device_tokens (user_id, token, platform)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id
+       RETURNING id, platform`,
+      [userId, token, platform ?? null],
+    );
+  }
+
+  async pushToUser(userId: string, title: string, body: string, data?: Record<string, string>) {
+    const rows = await this.db.query<{ token: string }>(
+      `SELECT token FROM device_tokens WHERE user_id = $1`,
+      [userId],
+    );
+    await Promise.all(
+      rows.map((r) =>
+        this.provider
+          .send({ token: r.token, title, body, data })
+          .catch((e) => this.logger.warn(`push failed: ${e.message}`)),
+      ),
+    );
+  }
+}

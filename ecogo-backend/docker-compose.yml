@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ecogo
+      POSTGRES_PASSWORD: ecogo
+      POSTGRES_DB: ecogo
+    ports:
+      - "5432:5432"
+    volumes:
+      - ecogo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecogo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - ecogo_redisdata:/data
+
+volumes:
+  ecogo_pgdata:
+  ecogo_redisdata:

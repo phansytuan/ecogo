@@ -1,0 +1,6 @@
+# Claude Code local memory — not part of the project
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

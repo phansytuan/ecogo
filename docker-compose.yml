@@ -1,0 +1,41 @@
+# Root orchestration — runs the whole ECOGO backend stack with one command:
+#   docker compose up --build
+# Then: dispatch console (ecogo-dispatch) and the two Flutter apps point at :3000.
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ecogo
+      POSTGRES_PASSWORD: ecogo
+      POSTGRES_DB: ecogo
+    ports: ["5433:5432"]
+    volumes: ["ecogo_pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecogo"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6380:6379"]
+    volumes: ["ecogo_redisdata:/data"]
+
+  api:
+    build: ./ecogo-backend
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://ecogo:ecogo@db:5432/ecogo
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-change-me
+      JWT_EXPIRES_IN: 30d
+      OTP_PROVIDER: fake
+      DIRECTIONS_PROVIDER: fake
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    ports: ["3001:3000"]
+
+volumes:
+  ecogo_pgdata:
+  ecogo_redisdata:
