@@ -23,10 +23,21 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   void initState() {
     super.initState();
     _load();
+    // Live-update the passenger list when someone books or cancels this ride.
+    final rt = context.read<AppState>().realtime;
+    rt.joinRide(widget.ride.id);
+    rt.on('booking.matched', (_) {
+      if (mounted) _load();
+    });
+    rt.on('booking.cancelled', (_) {
+      if (mounted) _load();
+    });
   }
 
   void _load() {
-    setState(() => _bookings = context.read<AppState>().rides.bookings(widget.ride.id));
+    setState(() {
+      _bookings = context.read<AppState>().rides.bookings(widget.ride.id);
+    });
   }
 
   Future<void> _toggleShare(bool on) async {
@@ -67,14 +78,58 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    final rt = context.read<AppState>().realtime;
+    rt.off('booking.matched');
+    rt.off('booking.cancelled');
     super.dispose();
+  }
+
+  Future<void> _cancelRide() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Huỷ chuyến?'),
+        content: const Text('Huỷ chuyến sẽ huỷ tất cả chỗ đã đặt. Bạn có chắc không?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Không')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 44), backgroundColor: const Color(0xFFC0392B)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Huỷ chuyến'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _sub?.cancel();
+      await context.read<AppState>().rides.cancel(widget.ride.id);
+      if (!mounted) return;
+      showSnack(context, 'Đã huỷ chuyến');
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (mounted) showSnack(context, 'Huỷ chuyến thất bại', error: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final r = widget.ride;
     return Scaffold(
-      appBar: AppBar(title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}')),
+      appBar: AppBar(
+        title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}'),
+        actions: [
+          if (r.status == 'open' || r.status == 'full')
+            IconButton(
+              tooltip: 'Huỷ chuyến',
+              icon: const Icon(Icons.cancel_outlined),
+              onPressed: _cancelRide,
+            ),
+        ],
+      ),
       body: Column(
         children: [
           // GPS share control
@@ -153,6 +208,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                                   children: [
                                     if (b.status == 'matched')
                                       FilledButton(
+                                        // Override the theme's full-width (Size.fromHeight)
+                                        // minimum, which forces infinite width inside a Row.
+                                        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
                                         onPressed: confirming ? null : () => _confirm(b),
                                         child: confirming
                                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

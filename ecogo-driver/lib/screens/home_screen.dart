@@ -23,7 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _load() {
-    setState(() => _rides = context.read<AppState>().rides.mine());
+    setState(() {
+      _rides = context.read<AppState>().rides.mine();
+    });
   }
 
   @override
@@ -88,10 +90,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Card(
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => ActiveRideScreen(ride: r)),
-                      ),
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => ActiveRideScreen(ride: r)),
+                        );
+                        if (mounted) _load();
+                      },
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

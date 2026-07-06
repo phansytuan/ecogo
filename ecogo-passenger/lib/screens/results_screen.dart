@@ -185,7 +185,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                           _row(Icons.alt_route, 'Lệch tuyến', '${c.totalOffsetM} m'),
                           _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
                           if (c.pricePerSeat != null)
-                            _row(Icons.payments, 'Giá mỗi ghế', '${c.pricePerSeat!.toString()}đ'),
+                            _row(Icons.payments, 'Giá mỗi ghế', formatVnd(c.pricePerSeat!)),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,

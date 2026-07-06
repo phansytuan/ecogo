@@ -12,6 +12,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
+  final _scroll = ScrollController();
   final List<Message> _messages = [];
   String? _myId;
 
@@ -25,6 +26,7 @@ class _ChatScreenState extends State<ChatScreen> {
     app.realtime.onChatMessage((d) {
       if (!mounted) return;
       setState(() => _messages.add(Message.fromJson(d)));
+      _scrollToBottom();
     });
   }
 
@@ -37,7 +39,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ..clear()
           ..addAll(msgs);
       });
+      _scrollToBottom();
     } catch (_) {}
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
   }
 
   Future<void> _send() async {
@@ -56,6 +65,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     context.read<AppState>().realtime.off('chat:message');
+    _scroll.dispose();
+    _input.dispose();
     super.dispose();
   }
 
@@ -67,6 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: ListView.builder(
+              controller: _scroll,
               padding: const EdgeInsets.all(12),
               itemCount: _messages.length,
               itemBuilder: (_, i) {

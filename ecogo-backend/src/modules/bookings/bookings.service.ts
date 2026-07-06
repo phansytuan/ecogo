@@ -104,17 +104,19 @@ export class BookingsService {
   }
 
   async confirm(bookingId: string, driverId: string) {
-    const row = await this.db.one(
+    const row = await this.db.one<{ id: string; ride_id: string; status: string }>(
       `UPDATE bookings b SET status = 'confirmed'
        FROM rides r
        WHERE b.id = $1 AND b.ride_id = r.id AND r.driver_id = $2 AND b.status = 'matched'
-       RETURNING b.id, b.status`,
+       RETURNING b.id, b.ride_id, b.status`,
       [bookingId, driverId],
     );
     if (!row) {
       throw new NotFoundException('Booking not found, not your ride, or not in matched state');
     }
-    return row;
+    // Notify the passenger (and dispatch) in real time that the driver confirmed.
+    this.realtime.emitToRide(row.ride_id, 'booking.confirmed', { id: row.id, status: row.status });
+    return { id: row.id, status: row.status };
   }
 
   /**
@@ -128,7 +130,7 @@ export class BookingsService {
         `SELECT b.id, b.ride_id, b.passenger_id, b.status, b.fp, b.fd, b.seats,
                 r.driver_id, r.total_seats
          FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id
-         WHERE b.id = $1 FOR UPDATE`,
+         WHERE b.id = $1 FOR UPDATE OF b`,
         [bookingId],
       );
       const row = res.rows[0];

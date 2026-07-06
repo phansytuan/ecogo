@@ -26,6 +26,7 @@ class TripScreen extends StatefulWidget {
 
 class _TripScreenState extends State<TripScreen> {
   LatLng? _driver;
+  String _status = 'matched';
 
   @override
   void initState() {
@@ -36,12 +37,57 @@ class _TripScreenState extends State<TripScreen> {
       if (!mounted) return;
       setState(() => _driver = LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()));
     });
+    // Driver confirmed this booking.
+    rt.on('booking.confirmed', (_) {
+      if (!mounted) return;
+      setState(() => _status = 'confirmed');
+      showSnack(context, 'Tài xế đã xác nhận chuyến của bạn');
+    });
+    // Driver cancelled the whole ride — tell the passenger and leave the screen.
+    rt.on('ride.cancelled', (_) {
+      if (!mounted) return;
+      showSnack(context, 'Tài xế đã huỷ chuyến này', error: true);
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    });
   }
 
   @override
   void dispose() {
-    context.read<AppState>().realtime.off('ride:location');
+    final rt = context.read<AppState>().realtime;
+    rt.off('ride:location');
+    rt.off('booking.confirmed');
+    rt.off('ride.cancelled');
     super.dispose();
+  }
+
+  Future<void> _cancel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Huỷ chuyến?'),
+        content: const Text('Bạn có chắc muốn huỷ đặt chỗ này không?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Không')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 44), backgroundColor: const Color(0xFFC0392B)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Huỷ chuyến'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<AppState>().bookings.cancel(widget.bookingId);
+      if (!mounted) return;
+      showSnack(context, 'Đã huỷ chuyến đi');
+      Navigator.pop(context);
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (mounted) showSnack(context, 'Huỷ chuyến thất bại', error: true);
+    }
   }
 
   @override
@@ -53,11 +99,17 @@ class _TripScreenState extends State<TripScreen> {
         title: const Text('Chuyến của bạn'),
         actions: [
           IconButton(
+            tooltip: 'Nhắn tài xế',
             icon: const Icon(Icons.chat_bubble_outline),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => ChatScreen(bookingId: widget.bookingId)),
             ),
+          ),
+          IconButton(
+            tooltip: 'Huỷ chuyến',
+            icon: const Icon(Icons.cancel_outlined),
+            onPressed: _cancel,
           ),
         ],
       ),
@@ -81,7 +133,11 @@ class _TripScreenState extends State<TripScreen> {
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
-          _driver == null ? 'Đang chờ tài xế cập nhật vị trí…' : 'Tài xế đang di chuyển',
+          _driver != null
+              ? 'Tài xế đang di chuyển'
+              : (_status == 'confirmed'
+                  ? 'Tài xế đã xác nhận · đang chờ vị trí…'
+                  : 'Đang chờ tài xế xác nhận…'),
           textAlign: TextAlign.center,
         ),
       ),

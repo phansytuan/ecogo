@@ -46,6 +46,17 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
 /// Staggered helper: returns a list delay for index i.
 Duration staggerDelay(int i) => Duration(milliseconds: (i * 55).clamp(0, 400));
 
+/// Formats a VND amount with thousands separators, e.g. 200000 -> "200.000 đ".
+String formatVnd(int amount) {
+  final digits = amount.abs().toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buf.write('.');
+    buf.write(digits[i]);
+  }
+  return '${amount < 0 ? '-' : ''}$buf đ';
+}
+
 class LoadingView extends StatelessWidget {
   final String? label;
   const LoadingView({super.key, this.label});

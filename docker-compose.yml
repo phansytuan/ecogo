@@ -31,6 +31,8 @@ services:
       JWT_EXPIRES_IN: 30d
       OTP_PROVIDER: fake
       DIRECTIONS_PROVIDER: fake
+      # Dispatch console (5173) + API (3000) + Flutter web dev ports (driver 5300, passenger 5301)
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:5300,http://localhost:5301
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
