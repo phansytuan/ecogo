@@ -92,9 +92,10 @@ class _ResultsScreenState extends State<ResultsScreen> {
           );
       if (!mounted) return;
       showSnack(context, 'Đã gửi yêu cầu — hệ thống sẽ ghép hoặc chuyển điều phối viên.');
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.friendly, error: true);
     } catch (_) {
-      if (!mounted) return;
-      showSnack(context, 'Gửi yêu cầu thất bại', error: true);
+      if (mounted) showSnack(context, 'Gửi yêu cầu thất bại', error: true);
     } finally {
       if (mounted) setState(() => _requesting = false);
     }
