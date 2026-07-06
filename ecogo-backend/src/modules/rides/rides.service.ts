@@ -1,5 +1,13 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import {
   DIRECTIONS_PROVIDER,
@@ -12,6 +20,8 @@ export class RidesService {
   constructor(
     private readonly db: DatabaseService,
     private readonly vehicles: VehiclesService,
+    private readonly realtime: RealtimeGateway,
+    private readonly events: EventEmitter2,
     @Inject(DIRECTIONS_PROVIDER) private readonly directions: DirectionsProvider,
   ) {}
 
@@ -79,5 +89,46 @@ export class RidesService {
        WHERE b.ride_id = $1 ORDER BY b.created_at ASC`,
       [rideId],
     );
+  }
+
+  async cancel(rideId: string, driverId: string) {
+    const result = await this.db.tx(async (client) => {
+      const ride = (
+        await client.query(`SELECT id, driver_id, status FROM rides WHERE id = $1 FOR UPDATE`, [
+          rideId,
+        ])
+      ).rows[0];
+      if (!ride) throw new NotFoundException('Ride not found');
+      if (ride.driver_id !== driverId) throw new ForbiddenException('Not your ride');
+      if (ride.status === 'cancelled' || ride.status === 'completed') {
+        throw new ConflictException(`Ride already ${ride.status}`);
+      }
+      // Cancel every still-active booking and capture passengers to notify.
+      const affected = (
+        await client.query(
+          `UPDATE bookings SET status = 'cancelled'
+           WHERE ride_id = $1 AND status IN ('matched','confirmed')
+           RETURNING id, passenger_id`,
+          [rideId],
+        )
+      ).rows;
+      await client.query(`UPDATE rides SET status = 'cancelled', available_seats = 0 WHERE id = $1`, [
+        rideId,
+      ]);
+      return {
+        rideId,
+        driverId,
+        status: 'cancelled',
+        bookings: affected.map((b: { id: string; passenger_id: string }) => ({
+          id: b.id,
+          passengerId: b.passenger_id,
+        })),
+      };
+    });
+
+    this.realtime.emitToRide(rideId, 'ride.cancelled', result);
+    this.realtime.emitToDispatch('ride.cancelled', result);
+    this.events.emit('ride.cancelled', result);
+    return result;
   }
 }

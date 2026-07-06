@@ -1,7 +1,7 @@
 {
   "name": "ecogo-dispatch",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "framer-motion": "^11.5.4",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

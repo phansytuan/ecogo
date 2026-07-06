@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/stop.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'results_screen.dart';
 

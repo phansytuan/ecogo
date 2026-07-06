@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
-import { NOTIFICATION_PROVIDER, NotificationProvider } from './notification.provider';
+import {
+  InvalidTokenError,
+  NOTIFICATION_PROVIDER,
+  NotificationProvider,
+} from './notification.provider';
 
 @Injectable()
 export class NotificationsService {
@@ -27,11 +31,23 @@ export class NotificationsService {
       [userId],
     );
     await Promise.all(
-      rows.map((r) =>
-        this.provider
-          .send({ token: r.token, title, body, data })
-          .catch((e) => this.logger.warn(`push failed: ${e.message}`)),
-      ),
+      rows.map(async (r) => {
+        try {
+          await this.provider.send({ token: r.token, title, body, data });
+        } catch (e) {
+          if (e instanceof InvalidTokenError) {
+            await this.pruneToken(e.token);
+          } else {
+            this.logger.warn(`push failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }),
     );
+  }
+
+  /** Remove a device token FCM has reported as unregistered. */
+  private async pruneToken(token: string) {
+    await this.db.query(`DELETE FROM device_tokens WHERE token = $1`, [token]).catch(() => {});
+    this.logger.debug('pruned an invalid device token');
   }
 }

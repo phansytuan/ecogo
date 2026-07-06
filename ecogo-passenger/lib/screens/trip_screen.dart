@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import '../models/stop.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'chat_screen.dart';
 

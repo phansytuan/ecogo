@@ -7,7 +7,7 @@ export const requestOtp = (phone: string) =>
   });
 
 export const verifyOtp = (phone: string, code: string) =>
-  api<{ accessToken: string; user: { roles: string[] } }>('/auth/verify-otp', {
-    method: 'POST',
-    body: JSON.stringify({ phone, code }),
-  });
+  api<{ accessToken: string; refreshToken: string; user: { id: string; roles: string[] } }>(
+    '/auth/verify-otp',
+    { method: 'POST', body: JSON.stringify({ phone, code }) },
+  );

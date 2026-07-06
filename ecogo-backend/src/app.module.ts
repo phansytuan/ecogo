@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { APP_GUARD } from '@nestjs/core';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
@@ -18,10 +21,14 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { ChatModule } from './modules/chat/chat.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
+import { HealthModule } from './modules/health/health.module';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     DatabaseModule,
     RedisModule,
@@ -39,6 +46,9 @@ import { RatingsModule } from './modules/ratings/ratings.module';
     ChatModule,
     TransactionsModule,
     RatingsModule,
+    HealthModule,
+    MaintenanceModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

@@ -10,6 +10,7 @@ function row(over: Partial<MatchCandidateRow>): MatchCandidateRow {
     dest_label: 'B',
     departure_time: '2026-07-01T06:00:00.000Z',
     available_seats: 3,
+    total_seats: 4,
     price_per_seat: '200000',
     duration_s: 7200, // 2h end-to-end
     driver_name: 'Drv',

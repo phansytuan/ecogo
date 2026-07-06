@@ -1,33 +1,33 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config.dart';
-import '../services/api_client.dart';
-import '../services/auth_service.dart';
-import '../services/bookings_service.dart';
-import '../services/chat_service.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import '../services/location_service.dart';
-import '../services/realtime_service.dart';
-import '../services/rides_service.dart';
-import '../services/vehicles_service.dart';
 
 class AppState extends ChangeNotifier {
-  final SharedPreferences prefs;
-  final ApiClient api = ApiClient(Config.apiBase);
-
-  late final AuthService auth = AuthService(api, prefs);
-  late final VehiclesService vehicles = VehiclesService(api);
-  late final RidesService rides = RidesService(api);
-  late final BookingsService bookings = BookingsService(api);
-  late final ChatService chat = ChatService(api);
+  final TokenStore tokens;
+  late final ApiClient api;
+  late final AuthService auth;
+  late final VehiclesService vehicles;
+  late final RidesService rides;
+  late final BookingsService bookings;
+  late final ChatService chat;
   final RealtimeService realtime = RealtimeService(Config.wsBase);
   final LocationService location = LocationService();
 
-  AppState(this.prefs) {
-    final token = prefs.getString('token');
-    if (token != null) {
-      api.setToken(token);
-      realtime.connect(token);
-    }
+  AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
+    api = ApiClient(Config.apiBase, tokens, onUnauthorized: _onUnauthorized);
+    auth = AuthService(api, tokens);
+    vehicles = VehiclesService(api);
+    rides = RidesService(api);
+    bookings = BookingsService(api);
+    chat = ChatService(api);
+    final t = tokens.access;
+    if (t != null) realtime.connect(t);
+  }
+
+  void _onUnauthorized() {
+    realtime.dispose();
+    notifyListeners();
   }
 
   bool get isLoggedIn => auth.isLoggedIn;
@@ -37,8 +37,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> verifyOtp(String phone, String code) async {
     await auth.verifyOtp(phone, code);
-    final token = prefs.getString('token');
-    if (token != null) realtime.connect(token);
+    final t = tokens.access;
+    if (t != null) realtime.connect(t);
     notifyListeners();
   }
 

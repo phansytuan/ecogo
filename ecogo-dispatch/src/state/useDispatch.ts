@@ -7,84 +7,136 @@ import {
 } from '../api/dispatch';
 import { createSocket } from '../realtime/socket';
 import { getToken } from '../auth/token';
+import { useToast } from '../ui/toast';
 import { Candidate, DriverLocation, QueueItem } from '../api/types';
 
+export type ConnStatus = 'connecting' | 'online' | 'offline';
+
 export function useDispatch() {
+  const toast = useToast();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverLocation>>({});
-  const [error, setError] = useState<string | null>(null);
-  const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
+  const [status, setStatus] = useState<ConnStatus>('connecting');
+  const [loadingQueue, setLoadingQueue] = useState(true);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoadingQueue(true);
     try {
-      setQueue(await getQueue());
-      setError(null);
-    } catch (e: any) {
-      setError(e.message);
+      const q = await getQueue();
+      setQueue(q);
+      setQueueError(null);
+    } catch (e) {
+      setQueueError(e instanceof Error ? e.message : 'Lỗi tải hàng đợi');
+    } finally {
+      setLoadingQueue(false);
     }
   }, []);
+
+  const debouncedRefresh = useCallback(() => {
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => refresh(true), 300);
+  }, [refresh]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  // Live updates: any queue-affecting event triggers a refresh; driver pings
-  // accumulate into a map for the map panel.
+  // live-ticking clock so wait timers update every second
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => (t + 1) % 86400), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // socket: connection status + live events
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     const s = createSocket(token);
-    socketRef.current = s;
-    const onChange = () => refresh();
-    s.on('request.pending', onChange);
-    s.on('request.no_match', onChange);
-    s.on('booking.matched', onChange);
+    s.on('connect', () => setStatus('online'));
+    s.on('disconnect', () => setStatus('offline'));
+    s.on('connect_error', () => setStatus('offline'));
+    s.io.on('reconnect_attempt', () => setStatus('connecting'));
+    s.on('request.pending', debouncedRefresh);
+    s.on('request.no_match', debouncedRefresh);
+    s.on('booking.matched', debouncedRefresh);
     s.on('driver:location', (loc: DriverLocation) =>
       setDrivers((d) => ({ ...d, [loc.driverId]: loc })),
     );
     return () => {
       s.disconnect();
     };
-  }, [refresh]);
+  }, [debouncedRefresh]);
 
-  const select = useCallback(async (id: string) => {
-    setSelectedId(id);
-    setCandidates([]);
-    try {
-      setCandidates(await getCandidates(id));
-    } catch (e: any) {
-      setError(e.message);
-    }
-  }, []);
+  const select = useCallback(
+    async (id: string) => {
+      setSelectedId(id);
+      setCandidates([]);
+      setLoadingCandidates(true);
+      try {
+        setCandidates(await getCandidates(id));
+      } catch (e) {
+        toast('error', e instanceof Error ? e.message : 'Không tải được ứng viên');
+      } finally {
+        setLoadingCandidates(false);
+      }
+    },
+    [toast],
+  );
 
   const claim = useCallback(
     async (id: string) => {
+      setBusyId(id);
+      const prev = queue;
+      // optimistic: mark claimed immediately
+      setQueue((q) => q.map((item) => (item.id === id ? { ...item, claimed_by: 'me' } : item)));
       try {
         await claimRequest(id);
-        await refresh();
-      } catch (e: any) {
-        setError(e.message);
+        toast('success', 'Đã nhận yêu cầu xử lý');
+        refresh(true);
+      } catch (e) {
+        setQueue(prev); // rollback
+        toast('error', e instanceof Error ? e.message : 'Nhận xử lý thất bại');
+      } finally {
+        setBusyId(null);
       }
     },
-    [refresh],
+    [queue, refresh, toast],
   );
 
   const assign = useCallback(
     async (id: string, rideId: string) => {
+      setBusyId(id);
+      const prev = queue;
+      // optimistic: remove from queue + clear selection
+      setQueue((q) => q.filter((item) => item.id !== id));
+      setSelectedId(null);
+      setCandidates([]);
       try {
         await assignRequest(id, rideId);
-        setSelectedId(null);
-        setCandidates([]);
-        await refresh();
-      } catch (e: any) {
-        setError(e.message);
+        toast('success', 'Đã gán tài xế cho khách');
+        refresh(true);
+      } catch (e) {
+        setQueue(prev); // rollback
+        toast('error', e instanceof Error ? e.message : 'Gán tài xế thất bại');
+      } finally {
+        setBusyId(null);
       }
     },
-    [refresh],
+    [queue, refresh, toast],
   );
 
   const selected = queue.find((q) => q.id === selectedId) ?? null;
-  return { queue, selected, selectedId, candidates, drivers, error, select, claim, assign, refresh };
+  return {
+    queue, selected, selectedId, candidates, drivers, status,
+    loadingQueue, loadingCandidates, queueError, busyId,
+    select, claim, assign, refresh,
+  };
 }

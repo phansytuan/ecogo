@@ -1,7 +1,7 @@
 name: ecogo_passenger
 description: ECOGO passenger app (MVP) — search, book, track, chat.
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -9,10 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.2
+  ecogo_core:
+    path: ../ecogo-core
   provider: ^6.1.2
   shared_preferences: ^2.3.2
-  socket_io_client: ^2.0.3+1
   flutter_map: ^6.2.1
   latlong2: ^0.9.1
   intl: ^0.19.0

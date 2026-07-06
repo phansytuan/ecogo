@@ -26,6 +26,12 @@ export class RidesController {
     return this.rides.bookingsForRide(id, user.id);
   }
 
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard)
+  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.rides.cancel(id, user.id);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.rides.findById(id);

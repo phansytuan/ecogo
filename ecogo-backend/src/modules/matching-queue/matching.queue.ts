@@ -16,7 +16,7 @@ export class MatchingQueueProducer {
       { bookingId },
       {
         delay: REATTEMPT_DELAY_MS,
-        jobId: `reattempt-${bookingId}`,
+        jobId: `reattempt:${bookingId}`,
         removeOnComplete: true,
         removeOnFail: true,
       },

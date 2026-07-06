@@ -1,15 +1,23 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { canFit, tightestFreeSeats } from '../matching/segment-capacity';
 import { CreateBookingDto } from './bookings.dto';
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly realtime: RealtimeGateway,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async create(passengerId: string, dto: CreateBookingDto) {
     const seats = dto.seats ?? 1;
@@ -18,7 +26,7 @@ export class BookingsService {
     return this.db.tx(async (client) => {
       // Lock the ride and compute fp/fd against its route in one go.
       const rideRes = await client.query(
-        `SELECT id, status, available_seats, price_per_seat,
+        `SELECT id, status, available_seats, total_seats, price_per_seat,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS fp,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($4,$5),4326)) AS fd
          FROM rides WHERE id = $1 FOR UPDATE`,
@@ -27,9 +35,25 @@ export class BookingsService {
       const ride = rideRes.rows[0];
       if (!ride) throw new NotFoundException('Ride not found');
       if (ride.status !== 'open') throw new ConflictException('Ride is not open');
-      if (ride.available_seats < seats) throw new ConflictException('Not enough seats');
       if (!(ride.fp < ride.fd)) {
         throw new BadRequestException('Pickup must be before dropoff along the route');
+      }
+
+      // Per-segment capacity: a seat is only occupied on the sub-interval [fp, fd).
+      const existing = (
+        await client.query(
+          `SELECT fp, fd, seats FROM bookings
+           WHERE ride_id = $1 AND status IN ('matched','confirmed')`,
+          [dto.rideId],
+        )
+      ).rows.map((b: { fp: string; fd: string; seats: number }) => ({
+        fp: Number(b.fp),
+        fd: Number(b.fd),
+        seats: b.seats,
+      }));
+      const newSeg = { fp: Number(ride.fp), fd: Number(ride.fd), seats };
+      if (!canFit(existing, ride.total_seats, newSeg.fp, newSeg.fd, seats)) {
+        throw new ConflictException('Not enough seats on this segment');
       }
 
       const fare = ride.price_per_seat != null ? Number(ride.price_per_seat) * seats : null;
@@ -59,7 +83,7 @@ export class BookingsService {
         ],
       );
 
-      const remaining = ride.available_seats - seats;
+      const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);
       await client.query(
         `UPDATE rides SET available_seats = $2,
                           status = CASE WHEN $2 = 0 THEN 'full' ELSE status END
@@ -91,5 +115,80 @@ export class BookingsService {
       throw new NotFoundException('Booking not found, not your ride, or not in matched state');
     }
     return row;
+  }
+
+  /**
+   * Cancel a booking and return its seat to the segment. Either the passenger
+   * (their own booking) or the driver (a booking on their ride) may cancel.
+   * Pending ride-requests can be withdrawn by the passenger.
+   */
+  async cancel(bookingId: string, userId: string) {
+    const result = await this.db.tx(async (client) => {
+      const res = await client.query(
+        `SELECT b.id, b.ride_id, b.passenger_id, b.status, b.fp, b.fd, b.seats,
+                r.driver_id, r.total_seats
+         FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id
+         WHERE b.id = $1 FOR UPDATE`,
+        [bookingId],
+      );
+      const row = res.rows[0];
+      if (!row) throw new NotFoundException('Booking not found');
+
+      const isPassenger = row.passenger_id === userId;
+      const isDriver = row.driver_id != null && row.driver_id === userId;
+      if (!isPassenger && !isDriver) {
+        throw new ForbiddenException('Not allowed to cancel this booking');
+      }
+
+      const base = {
+        id: bookingId,
+        status: 'cancelled',
+        rideId: row.ride_id as string | null,
+        passengerId: row.passenger_id as string,
+        driverId: row.driver_id as string | null,
+        by: isDriver ? 'driver' : 'passenger',
+      };
+
+      // A still-pending ride request: only the passenger withdraws it.
+      if (row.status === 'pending' || row.status === 'no_match') {
+        if (!isPassenger) throw new ForbiddenException('Only the passenger can withdraw a request');
+        await client.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [bookingId]);
+        return base;
+      }
+
+      if (row.status !== 'matched' && row.status !== 'confirmed') {
+        throw new ConflictException('Booking cannot be cancelled in its current state');
+      }
+
+      await client.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [bookingId]);
+
+      // Recompute availability from the remaining active bookings and reopen if needed.
+      const remaining = (
+        await client.query(
+          `SELECT fp, fd, seats FROM bookings
+           WHERE ride_id = $1 AND status IN ('matched','confirmed')`,
+          [row.ride_id],
+        )
+      ).rows.map((b: { fp: string; fd: string; seats: number }) => ({
+        fp: Number(b.fp),
+        fd: Number(b.fd),
+        seats: b.seats,
+      }));
+      const free = tightestFreeSeats(remaining, row.total_seats);
+      await client.query(
+        `UPDATE rides SET available_seats = $2,
+                          status = CASE WHEN status = 'full' AND $2 > 0 THEN 'open' ELSE status END
+         WHERE id = $1`,
+        [row.ride_id, free],
+      );
+      return base;
+    });
+
+    if (result.rideId) {
+      this.realtime.emitToRide(result.rideId, 'booking.cancelled', result);
+    }
+    this.realtime.emitToDispatch('booking.cancelled', result);
+    this.events.emit('booking.cancelled', result);
+    return result;
   }
 }

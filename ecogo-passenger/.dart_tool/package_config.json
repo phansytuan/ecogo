@@ -26,6 +26,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "ecogo_core",
+      "rootUri": "../../ecogo-core",
+      "packageUri": "lib/",
+      "languageVersion": "3.3"
+    },
+    {
       "name": "ffi",
       "rootUri": "file:///home/tuandev/.pub-cache/hosted/pub.dev/ffi-2.2.0",
       "packageUri": "lib/",

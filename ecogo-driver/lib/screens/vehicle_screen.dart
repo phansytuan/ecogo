@@ -47,7 +47,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             DropdownButtonFormField<String>(
-              initialValue: _type,
+              value: _type,
               decoration: const InputDecoration(labelText: 'Loại xe', border: OutlineInputBorder()),
               items: _types.entries
                   .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))

@@ -1,4 +1,4 @@
-import { IsString, Matches, Length } from 'class-validator';
+import { IsString, Matches, Length, IsNotEmpty } from 'class-validator';
 
 const VN_PHONE = /^(0|\+84)\d{9,10}$/;
 
@@ -16,4 +16,10 @@ export class VerifyOtpDto {
   @IsString()
   @Length(6, 6)
   code!: string;
+}
+
+export class RefreshDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken!: string;
 }

@@ -7,6 +7,7 @@ export interface MatchCandidateRow {
   dest_label: string | null;
   departure_time: string; // ISO
   available_seats: number;
+  total_seats: number;
   price_per_seat: string | null;
   duration_s: number;
   driver_name: string | null;

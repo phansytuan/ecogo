@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../models/stop.dart';
-import '../models/vehicle.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 
 class PostRideScreen extends StatefulWidget {
@@ -86,7 +85,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
             child: ListView(
               children: [
                 DropdownButtonFormField<Vehicle>(
-                  initialValue: _vehicle,
+                  value: _vehicle,
                   decoration: const InputDecoration(labelText: 'Xe', border: OutlineInputBorder()),
                   items: list
                       .map((v) => DropdownMenuItem(value: v, child: Text('${v.plate} · ${v.seats} ghế')))

@@ -9,6 +9,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { MatchingService } from './matching.service';
+import { canFit, tightestFreeSeats } from './segment-capacity';
 import { MatchRequestDto } from './matching.dto';
 
 @Injectable()
@@ -64,7 +65,7 @@ export class AssignmentService {
     let driverId: string | undefined;
     const result = await this.db.tx(async (client) => {
       const rideRes = await client.query(
-        `SELECT id, status, available_seats, driver_id FROM rides WHERE id = $1 FOR UPDATE`,
+        `SELECT id, status, available_seats, total_seats, driver_id FROM rides WHERE id = $1 FOR UPDATE`,
         [rideId],
       );
       const ride = rideRes.rows[0];
@@ -82,9 +83,25 @@ export class AssignmentService {
       );
       const loc = locRes.rows[0];
       if (!loc) throw new NotFoundException('Booking or ride missing');
-      if (ride.available_seats < loc.seats) throw new ConflictException('Not enough seats');
       if (!(loc.fp < loc.fd)) {
         throw new BadRequestException('Pickup must be before dropoff along the route');
+      }
+
+      // Per-segment capacity check against other active bookings on this ride.
+      const existing = (
+        await client.query(
+          `SELECT fp, fd, seats FROM bookings
+           WHERE ride_id = $1 AND status IN ('matched','confirmed')`,
+          [rideId],
+        )
+      ).rows.map((b: { fp: string; fd: string; seats: number }) => ({
+        fp: Number(b.fp),
+        fd: Number(b.fd),
+        seats: b.seats,
+      }));
+      const newSeg = { fp: Number(loc.fp), fd: Number(loc.fd), seats: loc.seats };
+      if (!canFit(existing, ride.total_seats, newSeg.fp, newSeg.fd, loc.seats)) {
+        throw new ConflictException('Not enough seats on this segment');
       }
 
       const fare = loc.price_per_seat != null ? Number(loc.price_per_seat) * loc.seats : null;
@@ -100,7 +117,7 @@ export class AssignmentService {
         throw new ConflictException('Request is no longer pending');
       }
 
-      const remaining = ride.available_seats - loc.seats;
+      const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);
       await client.query(
         `UPDATE rides SET available_seats = $2,
                           status = CASE WHEN $2 = 0 THEN 'full' ELSE status END

@@ -1,41 +1,29 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config.dart';
-import '../services/api_client.dart';
-import '../services/auth_service.dart';
-import '../services/bookings_service.dart';
-import '../services/chat_service.dart';
-import '../services/matching_service.dart';
-import '../services/realtime_service.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 
 class AppState extends ChangeNotifier {
-  final ApiClient api;
-  final AuthService auth;
-  final MatchingService matching;
-  final BookingsService bookings;
-  final ChatService chat;
-  final RealtimeService realtime;
+  final TokenStore tokens;
+  late final ApiClient api;
+  late final AuthService auth;
+  late final MatchingService matching;
+  late final BookingsService bookings;
+  late final ChatService chat;
+  final RealtimeService realtime = RealtimeService(Config.wsBase);
 
-  AppState(SharedPreferences prefs)
-      : api = ApiClient(Config.apiBase),
-        auth = AuthService(ApiClient(Config.apiBase), prefs),
-        matching = MatchingService(ApiClient(Config.apiBase)),
-        bookings = BookingsService(ApiClient(Config.apiBase)),
-        chat = ChatService(ApiClient(Config.apiBase)),
-        realtime = RealtimeService(Config.wsBase) {
-    // Share a single ApiClient (and its token) across all services.
-    _wire(prefs);
+  AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
+    api = ApiClient(Config.apiBase, tokens, onUnauthorized: _onUnauthorized);
+    auth = AuthService(api, tokens);
+    matching = MatchingService(api);
+    bookings = BookingsService(api);
+    chat = ChatService(api);
+    final t = tokens.access;
+    if (t != null) realtime.connect(t);
   }
 
-  void _wire(SharedPreferences prefs) {
-    final token = prefs.getString('token');
-    for (final c in [matching.api, bookings.api, chat.api]) {
-      c.setToken(token);
-    }
-    if (token != null) {
-      api.setToken(token);
-      realtime.connect(token);
-    }
+  void _onUnauthorized() {
+    realtime.dispose();
+    notifyListeners();
   }
 
   bool get isLoggedIn => auth.isLoggedIn;
@@ -45,19 +33,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> verifyOtp(String phone, String code) async {
     await auth.verifyOtp(phone, code);
-    final token = auth.prefs.getString('token');
-    for (final c in [api, matching.api, bookings.api, chat.api]) {
-      c.setToken(token);
-    }
-    if (token != null) realtime.connect(token);
+    final t = tokens.access;
+    if (t != null) realtime.connect(t);
     notifyListeners();
   }
 
   Future<void> logout() async {
     await auth.logout();
-    for (final c in [api, matching.api, bookings.api, chat.api]) {
-      c.setToken(null);
-    }
     realtime.dispose();
     notifyListeners();
   }

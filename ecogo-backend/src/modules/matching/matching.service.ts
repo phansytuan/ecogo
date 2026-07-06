@@ -3,6 +3,7 @@ import { DatabaseService } from '../../database/database.service';
 import { MatchRequestDto } from './matching.dto';
 import { MatchCandidateRow, MatchProfile, RankedCandidate } from './matching.types';
 import { rankCandidates } from './ranking';
+import { freeSeatsOnSegment, Seg } from './segment-capacity';
 
 interface ProfileConfig {
   toleranceM: number; // how far off the route a pickup/dropoff may sit
@@ -42,7 +43,7 @@ export class MatchingService {
                ST_SetSRID(ST_MakePoint($3,$4),4326) AS dropoff
       )
       SELECT r.id, r.driver_id, r.vehicle_id, r.origin_label, r.dest_label,
-             r.departure_time, r.available_seats, r.price_per_seat, r.duration_s,
+             r.departure_time, r.available_seats, r.total_seats, r.price_per_seat, r.duration_s,
              u.full_name AS driver_name, u.rating AS driver_rating,
              ST_LineLocatePoint(r.route, req.pickup)  AS fp,
              ST_LineLocatePoint(r.route, req.dropoff) AS fd,
@@ -56,7 +57,7 @@ export class MatchingService {
       JOIN users u ON u.id = r.driver_id
       CROSS JOIN req
       WHERE r.status = 'open'
-        AND r.available_seats >= $5
+        AND r.total_seats >= $5
         AND r.departure_time BETWEEN $6 AND $7
         AND ST_DWithin(r.route::geography, req.pickup::geography,  $8)
         AND ST_DWithin(r.route::geography, req.dropoff::geography, $8)
@@ -78,10 +79,34 @@ export class MatchingService {
       cfg.limit,
     ]);
 
-    const filtered =
-      cfg.offsetCeilingM == null
-        ? rows
-        : rows.filter((r) => r.pickup_off_m + r.dropoff_off_m <= cfg.offsetCeilingM!);
+    // Per-segment availability: count only bookings that overlap each candidate's
+    // searched [fp, fd) segment, not the whole ride. A ride that is "full" on a
+    // busy stretch can still have room on a quieter one.
+    const rideIds = rows.map((r) => r.id);
+    const bookingsByRide = new Map<string, Seg[]>();
+    if (rideIds.length > 0) {
+      const bk = await this.db.query<{ ride_id: string; fp: string; fd: string; seats: number }>(
+        `SELECT ride_id, fp, fd, seats FROM bookings
+         WHERE ride_id = ANY($1) AND status IN ('matched','confirmed')`,
+        [rideIds],
+      );
+      for (const b of bk) {
+        const arr = bookingsByRide.get(b.ride_id) ?? [];
+        arr.push({ fp: Number(b.fp), fd: Number(b.fd), seats: b.seats });
+        bookingsByRide.set(b.ride_id, arr);
+      }
+    }
+
+    const filtered = rows.filter((r) => {
+      const segs = bookingsByRide.get(r.id) ?? [];
+      const free = freeSeatsOnSegment(segs, r.total_seats, r.fp, r.fd);
+      r.available_seats = free; // surface seats free on THIS segment
+      if (free < seats) return false;
+      if (cfg.offsetCeilingM != null && r.pickup_off_m + r.dropoff_off_m > cfg.offsetCeilingM) {
+        return false;
+      }
+      return true;
+    });
 
     return rankCandidates(filtered, {
       desiredPickup: req.desiredPickup ? new Date(req.desiredPickup) : undefined,

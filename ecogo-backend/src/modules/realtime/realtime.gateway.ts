@@ -22,7 +22,12 @@ interface SocketUser {
  *  - dispatch room (`dispatch`): dispatchers, for queue/no_match events
  * Drivers emit `driver:location`; positions go to Redis and fan out to the ride room.
  */
-@WebSocketGateway({ cors: { origin: '*' } })
+const WS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+@WebSocketGateway({ cors: { origin: WS_ORIGINS, credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection {
   private readonly logger = new Logger(RealtimeGateway.name);
 

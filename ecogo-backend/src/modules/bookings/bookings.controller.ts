@@ -23,4 +23,9 @@ export class BookingsController {
   confirm(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.bookings.confirm(id, user.id);
   }
+
+  @Post(':id/cancel')
+  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.bookings.cancel(id, user.id);
+  }
 }
