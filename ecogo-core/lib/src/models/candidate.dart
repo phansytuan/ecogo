@@ -37,7 +37,7 @@ class Candidate {
         destLabel: j['destLabel'] as String?,
         departureTime: DateTime.parse(j['departureTime'] as String),
         etaPickup: DateTime.parse(j['etaPickup'] as String),
-        availableSeats: (j['availableSeats'] as num).toInt(),
+        availableSeats: j['availableSeats'] as int,
         pricePerSeat: (j['pricePerSeat'] as num?)?.toInt(),
         pickupOffsetM: (j['pickupOffsetM'] as num).toInt(),
         dropoffOffsetM: (j['dropoffOffsetM'] as num).toInt(),

@@ -9,6 +9,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { canFit, tightestFreeSeats } from '../matching/segment-capacity';
+import { quoteFare } from '../pricing/pricing';
 import { CreateBookingDto } from './bookings.dto';
 
 @Injectable()
@@ -26,7 +27,7 @@ export class BookingsService {
     return this.db.tx(async (client) => {
       // Lock the ride and compute fp/fd against its route in one go.
       const rideRes = await client.query(
-        `SELECT id, status, available_seats, total_seats, price_per_seat,
+        `SELECT id, status, available_seats, total_seats, price_per_seat, distance_m,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS fp,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($4,$5),4326)) AS fd
          FROM rides WHERE id = $1 FOR UPDATE`,
@@ -56,7 +57,16 @@ export class BookingsService {
         throw new ConflictException('Not enough seats on this segment');
       }
 
-      const fare = ride.price_per_seat != null ? Number(ride.price_per_seat) * seats : null;
+      // Fare = bracket price for the passenger's own segment distance x seats.
+      const segKm =
+        (Number(ride.fd) - Number(ride.fp)) *
+        (ride.distance_m != null ? Number(ride.distance_m) / 1000 : 0);
+      const fare =
+        ride.distance_m != null
+          ? quoteFare(segKm) * seats
+          : ride.price_per_seat != null
+            ? Number(ride.price_per_seat) * seats
+            : null;
 
       const bookingRes = await client.query(
         `INSERT INTO bookings
@@ -104,19 +114,17 @@ export class BookingsService {
   }
 
   async confirm(bookingId: string, driverId: string) {
-    const row = await this.db.one<{ id: string; ride_id: string; status: string }>(
+    const row = await this.db.one(
       `UPDATE bookings b SET status = 'confirmed'
        FROM rides r
        WHERE b.id = $1 AND b.ride_id = r.id AND r.driver_id = $2 AND b.status = 'matched'
-       RETURNING b.id, b.ride_id, b.status`,
+       RETURNING b.id, b.status`,
       [bookingId, driverId],
     );
     if (!row) {
       throw new NotFoundException('Booking not found, not your ride, or not in matched state');
     }
-    // Notify the passenger (and dispatch) in real time that the driver confirmed.
-    this.realtime.emitToRide(row.ride_id, 'booking.confirmed', { id: row.id, status: row.status });
-    return { id: row.id, status: row.status };
+    return row;
   }
 
   /**
@@ -130,7 +138,7 @@ export class BookingsService {
         `SELECT b.id, b.ride_id, b.passenger_id, b.status, b.fp, b.fd, b.seats,
                 r.driver_id, r.total_seats
          FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id
-         WHERE b.id = $1 FOR UPDATE OF b`,
+         WHERE b.id = $1 FOR UPDATE`,
         [bookingId],
       );
       const row = res.rows[0];

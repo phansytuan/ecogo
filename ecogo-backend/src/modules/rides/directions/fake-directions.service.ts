@@ -2,21 +2,23 @@ import { Injectable } from '@nestjs/common';
 import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
 
 /**
- * Offline provider for dev/tests. Builds a straight 2-point line and estimates
- * duration from great-circle distance at ~50 km/h. Good enough to exercise the
- * matching engine without hitting an external API.
+ * Offline provider for dev/tests. Builds a straight polyline through any
+ * waypoints and estimates duration from great-circle distance at ~50 km/h.
+ * Good enough to exercise matching and itineraries without an external API.
  */
 @Injectable()
 export class FakeDirectionsService implements DirectionsProvider {
-  async route(origin: LatLng, dest: LatLng): Promise<RouteResult> {
-    const km = haversineKm(origin, dest);
-    const durationS = Math.round((km / 50) * 3600);
+  async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
+    const points = [origin, ...waypoints, dest];
+    const legDurationsS: number[] = [];
+    for (let i = 1; i < points.length; i++) {
+      const km = haversineKm(points[i - 1], points[i]);
+      legDurationsS.push(Math.round((km / 50) * 3600));
+    }
     return {
-      coordinates: [
-        [origin.lng, origin.lat],
-        [dest.lng, dest.lat],
-      ],
-      durationS,
+      coordinates: points.map((p) => [p.lng, p.lat] as [number, number]),
+      durationS: legDurationsS.reduce((a, b) => a + b, 0),
+      legDurationsS,
     };
   }
 }

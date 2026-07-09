@@ -13,22 +13,27 @@ export class GoongDirectionsService implements DirectionsProvider {
 
   constructor(private readonly config: ConfigService) {}
 
-  async route(origin: LatLng, dest: LatLng): Promise<RouteResult> {
+  async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
     const key = this.config.get<string>('directions.goongApiKey');
     const url = 'https://rsapi.goong.io/Direction';
-    const { data } = await axios.get(url, {
-      params: {
-        origin: `${origin.lat},${origin.lng}`,
-        destination: `${dest.lat},${dest.lng}`,
-        vehicle: 'car',
-        api_key: key,
-      },
-    });
+    const params: Record<string, string | undefined> = {
+      origin: `${origin.lat},${origin.lng}`,
+      destination: `${dest.lat},${dest.lng}`,
+      vehicle: 'car',
+      api_key: key,
+    };
+    // Goong takes intermediate stops as a semicolon-separated waypoints list.
+    if (waypoints.length > 0) {
+      params.waypoints = waypoints.map((w) => `${w.lat},${w.lng}`).join(';');
+    }
+    const { data } = await axios.get(url, { params });
     const route = data?.routes?.[0];
     if (!route) throw new Error('Goong returned no route');
     const coordinates = decodePolyline(route.overview_polyline.points);
-    const durationS = route.legs?.[0]?.duration?.value ?? 0;
-    return { coordinates, durationS };
+    const legs: { duration?: { value?: number } }[] = route.legs ?? [];
+    const legDurationsS = legs.map((l) => l.duration?.value ?? 0);
+    const durationS = legDurationsS.reduce((a, b) => a + b, 0);
+    return { coordinates, durationS, legDurationsS };
   }
 }
 

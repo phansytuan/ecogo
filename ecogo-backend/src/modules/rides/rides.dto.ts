@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsInt,
   IsISO8601,
   IsLatitude,
@@ -21,6 +22,16 @@ export class GeoPointDto {
   @IsOptional()
   @IsString()
   label?: string;
+}
+
+export class QuoteDto {
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  origin!: GeoPointDto;
+
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  dest!: GeoPointDto;
 }
 
 export class CreateRideDto {
@@ -46,4 +57,21 @@ export class CreateRideDto {
   @IsInt()
   @Min(0)
   pricePerSeat?: number;
+}
+
+export class CharterCheckDto {
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  from!: GeoPointDto;
+
+  /** Seconds the charter itself will take before heading to the pickup. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  charterDurationS?: number;
+}
+
+export class CharterOptOutDto {
+  @IsBoolean()
+  optOut!: boolean;
 }

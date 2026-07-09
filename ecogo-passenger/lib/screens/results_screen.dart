@@ -92,10 +92,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
           );
       if (!mounted) return;
       showSnack(context, 'Đã gửi yêu cầu — hệ thống sẽ ghép hoặc chuyển điều phối viên.');
-    } on ApiException catch (e) {
-      if (mounted) showSnack(context, e.friendly, error: true);
     } catch (_) {
-      if (mounted) showSnack(context, 'Gửi yêu cầu thất bại', error: true);
+      if (!mounted) return;
+      showSnack(context, 'Gửi yêu cầu thất bại', error: true);
     } finally {
       if (mounted) setState(() => _requesting = false);
     }
@@ -186,7 +185,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                           _row(Icons.alt_route, 'Lệch tuyến', '${c.totalOffsetM} m'),
                           _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
                           if (c.pricePerSeat != null)
-                            _row(Icons.payments, 'Giá mỗi ghế', formatVnd(c.pricePerSeat!)),
+                            _row(Icons.payments, 'Giá mỗi ghế', '${c.pricePerSeat!.toString()}đ'),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,

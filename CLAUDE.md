@@ -12,9 +12,10 @@ ECOGO is a Vietnamese inter-provincial carpooling platform (rides ≥ 35 km). Th
 |---|---|---|
 | `ecogo-backend/` | NestJS + PostgreSQL/PostGIS + Redis | REST API + WebSocket gateway |
 | `ecogo-dispatch/` | React + Vite + Leaflet | Dispatcher cockpit (human-in-the-loop web console) |
-| `ecogo-passenger/` | Flutter | Passenger app |
-| `ecogo-driver/` | Flutter | Driver app |
-| `ecogo-backend/db/schema.sql` | SQL | Source-of-truth DB schema |
+| `ecogo-core/` | Flutter (path package `ecogo_core`) | Shared API client (token refresh), auth, realtime, models, UI kit — consumed by both apps |
+| `ecogo-passenger/` | Flutter | Passenger app (depends on `ecogo_core`) |
+| `ecogo-driver/` | Flutter | Driver app (depends on `ecogo_core`) |
+| `ecogo-backend/db/schema.sql` | SQL | Source-of-truth DB schema, plus incremental `db/migrations/*.sql` |
 | `e2e/` | Node.js | End-to-end smoke test |
 
 ## Commands
@@ -44,6 +45,9 @@ npm run build         # tsc + vite build
 ```
 
 ### Flutter apps
+Run from `ecogo-passenger/` or `ecogo-driver/`. Both consume `ecogo_core` as a
+local path dependency, so shared API/auth/realtime/model/UI changes go there, not
+in the app. Neither app has its own `flutter_test` dep — there are no widget tests.
 ```bash
 flutter pub get && flutter analyze
 flutter run --dart-define=API_BASE=http://10.0.2.2:3000/api --dart-define=WS_BASE=http://10.0.2.2:3000
@@ -57,7 +61,9 @@ NestJS with one module per domain under `src/modules/`. All modules use raw SQL 
 
 1. **Auth** — phone + OTP flow. OTP provider is swappable via `OTP_PROVIDER=fake|real`. JWT is validated on every request by `JwtAuthGuard`; roles are checked by `RolesGuard`.
 
-2. **Rides** — driver posts a ride with a geometry. The route `LineString` is stored in PostGIS and indexed with GIST. Directions are fetched via a swappable provider (`DIRECTIONS_PROVIDER=fake|goong`).
+2. **Rides** — driver posts a ride with a geometry. The route `LineString` is stored in PostGIS and indexed with GIST. Directions are fetched via a swappable provider (`DIRECTIONS_PROVIDER=fake|goong`), cached (`CachedDirectionsService`).
+   - Domain logic lives in small **pure, unit-tested** modules under `modules/rides/` — `geo.ts` (haversine/polyline km), `pricing/pricing.ts` (distance-bracket fares), `departure.ts` (post-window validation), `scheduling.ts` (driver rest-gap between trips), `itinerary.ts` (ordered pickup/dropoff stops with ETA offsets), `charter.ts` (charter-availability rule). Each has a `.spec.ts`; keep the DB/HTTP out of these files.
+   - Extra endpoints beyond CRUD: `POST /rides/quote`, `GET /rides/:id/itinerary`, `GET /rides/:id/route` (dynamic route), `GET/POST /rides/:id/charter*`, `POST /rides/:id/complete`.
 
 3. **Corridor matching** (`modules/matching/`, `modules/matching-queue/`):
    - `MatchingService.search()` runs the PostGIS query (four `ST_DWithin`/`ST_LineLocatePoint` clauses) to find rides whose route passes within tolerance of the passenger's pickup **and** dropoff, in the right direction (`fp < fd`).
@@ -80,13 +86,15 @@ NestJS with one module per domain under `src/modules/`. All modules use raw SQL 
 - `rides.route` is a `geometry(LineString, 4326)` with a GIST index — all corridor queries hit this.
 - `bookings.fp` / `bookings.fd` are fractional positions along the route (0–1), stored at assignment time.
 - `users.roles` is a `text[]` array (e.g. `{passenger}`, `{driver,passenger}`, `{dispatcher}`), GIN-indexed.
-- Schema is applied idempotently on boot via `scripts/init-db.ts` (all statements use `IF NOT EXISTS`).
+- On boot `scripts/init-db.ts` applies `db/schema.sql`, then every `db/migrations/*.sql` in sorted filename order. All statements are idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`), so add schema changes as a new numbered migration file — don't only edit `schema.sql`.
+- `rides` has `distance_m`, `completed_at`, and `charter_opt_out` columns (migrations 005/006) driving pricing, scheduling-gap, and charter logic.
 
 ## Environment variables
 
 Copy `ecogo-backend/.env.example`. Key settings:
 - `OTP_PROVIDER=fake` — OTP code is returned in the API response (dev only).
 - `DIRECTIONS_PROVIDER=fake` — uses straight-line geometry (no Goong API key needed).
+- `RIDES_MAX_BACKDATE_MIN` / `RIDES_MAX_AHEAD_DAYS` — how late a driver may log a departure and how far ahead a ride may be scheduled (see `departure.ts`).
 - For production: set `DIRECTIONS_PROVIDER=goong` + `GOONG_API_KEY`, use a real `JWT_SECRET`, and set `OTP_PROVIDER` to the SMS provider.
 
 ## Known MVP shortcuts

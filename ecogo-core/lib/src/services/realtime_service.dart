@@ -32,9 +32,6 @@ class RealtimeService {
   void onChatMessage(void Function(Map<String, dynamic>) cb) =>
       _socket?.on('chat:message', (d) => cb(Map<String, dynamic>.from(d as Map)));
 
-  /// Subscribe to any server event (e.g. 'booking.matched', 'ride.cancelled').
-  void on(String event, void Function(dynamic) cb) => _socket?.on(event, cb);
-
   void off(String event) => _socket?.off(event);
 
   void disposeSocket() {
