@@ -22,8 +22,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
-  void _load() {
-    setState(() => _rides = context.read<AppState>().rides.mine());
+  Future<void> _load() {
+    final f = context.read<AppState>().rides.mine();
+    setState(() => _rides = f);
+    // Non-throwing so the pull-to-refresh spinner tracks the reload; the
+    // FutureBuilder surfaces any error via ErrorView.
+    return f.then((_) {}, onError: (_) {});
   }
 
   @override
@@ -60,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: _load,
         child: FutureBuilder<List<Ride>>(
           future: _rides,
           builder: (context, snap) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 
 class VehicleScreen extends StatefulWidget {
@@ -13,6 +14,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
   final _plate = TextEditingController();
   int _seats = 6;
   bool _isEv = false;
+  bool _saving = false;
 
   static const _types = {
     'car_4': 'Xe 4 chỗ',
@@ -22,6 +24,12 @@ class _VehicleScreenState extends State<VehicleScreen> {
   };
 
   Future<void> _save() async {
+    if (_saving) return;
+    if (_plate.text.trim().isEmpty) {
+      showSnack(context, 'Nhập biển số xe', error: true);
+      return;
+    }
+    setState(() => _saving = true);
     try {
       await context.read<AppState>().vehicles.create(
             type: _type,
@@ -31,9 +39,14 @@ class _VehicleScreenState extends State<VehicleScreen> {
           );
       if (!mounted) return;
       Navigator.pop(context, true);
-    } catch (e) {
+    } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      setState(() => _saving = false);
+      showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showSnack(context, 'Lưu xe thất bại', error: true);
     }
   }
 
@@ -79,7 +92,12 @@ class _VehicleScreenState extends State<VehicleScreen> {
               onChanged: (v) => setState(() => _isEv = v),
             ),
             const SizedBox(height: 12),
-            FilledButton(onPressed: _save, child: const Text('Lưu')),
+            FilledButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Lưu'),
+            ),
           ],
         ),
       ),

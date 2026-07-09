@@ -29,13 +29,19 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     _load();
   }
 
-  void _load() {
+  Future<void> _load() {
     final rides = context.read<AppState>().rides;
+    final b = rides.bookings(widget.ride.id);
+    final r = rides.dynamicRoute(widget.ride.id);
+    final c = rides.charterStatus(widget.ride.id);
     setState(() {
-      _bookings = rides.bookings(widget.ride.id);
-      _route = rides.dynamicRoute(widget.ride.id);
-      _charter = rides.charterStatus(widget.ride.id);
+      _bookings = b;
+      _route = r;
+      _charter = c;
     });
+    // Non-throwing so the pull-to-refresh spinner tracks the reload; each
+    // FutureBuilder surfaces its own error via ErrorView.
+    return Future.wait([b, r, c]).then((_) {}, onError: (_) {});
   }
 
   Future<void> _toggleShare(bool on) async {
@@ -145,7 +151,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}')),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: _load,
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
