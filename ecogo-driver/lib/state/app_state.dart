@@ -15,7 +15,8 @@ class AppState extends ChangeNotifier {
   final LocationService location = LocationService();
 
   AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
-    api = ApiClient(Config.apiBase, tokens, onUnauthorized: _onUnauthorized);
+    api = ApiClient(Config.apiBase, tokens,
+        onUnauthorized: _onUnauthorized, onTokenRefreshed: realtime.updateToken);
     auth = AuthService(api, tokens);
     vehicles = VehiclesService(api);
     rides = RidesService(api);
