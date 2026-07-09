@@ -27,11 +27,13 @@ class TripScreen extends StatefulWidget {
 class _TripScreenState extends State<TripScreen> {
   LatLng? _driver;
   String _status = 'matched';
+  late final RealtimeService _rt;
 
   @override
   void initState() {
     super.initState();
     final rt = context.read<AppState>().realtime;
+    _rt = rt;
     rt.joinRide(widget.rideId);
     rt.onRideLocation((d) {
       if (!mounted) return;
@@ -53,10 +55,9 @@ class _TripScreenState extends State<TripScreen> {
 
   @override
   void dispose() {
-    final rt = context.read<AppState>().realtime;
-    rt.off('ride:location');
-    rt.off('booking.confirmed');
-    rt.off('ride.cancelled');
+    _rt.off('ride:location');
+    _rt.off('booking.confirmed');
+    _rt.off('ride.cancelled');
     super.dispose();
   }
 

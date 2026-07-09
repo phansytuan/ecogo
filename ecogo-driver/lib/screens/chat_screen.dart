@@ -14,16 +14,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final List<Message> _messages = [];
+  late final RealtimeService _rt;
   String? _myId;
 
   @override
   void initState() {
     super.initState();
     final app = context.read<AppState>();
+    _rt = app.realtime;
     _myId = app.userId;
     _load(app);
-    app.realtime.joinChat(widget.bookingId);
-    app.realtime.onChatMessage((d) {
+    _rt.joinChat(widget.bookingId);
+    _rt.onChatMessage((d) {
       if (!mounted) return;
       setState(() => _messages.add(Message.fromJson(d)));
       _scrollToBottom();
@@ -59,7 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    context.read<AppState>().realtime.off('chat:message');
+    _rt.off('chat:message');
     _scroll.dispose();
     _input.dispose();
     super.dispose();

@@ -15,6 +15,7 @@ class ActiveRideScreen extends StatefulWidget {
 
 class _ActiveRideScreenState extends State<ActiveRideScreen> {
   late Future<List<RideBooking>> _bookings;
+  late final RealtimeService _rt;
   StreamSubscription<Position>? _sub;
   bool _sharing = false;
   final Set<String> _confirming = {};
@@ -24,12 +25,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     super.initState();
     _load();
     // Live-update the passenger list when someone books or cancels this ride.
-    final rt = context.read<AppState>().realtime;
-    rt.joinRide(widget.ride.id);
-    rt.on('booking.matched', (_) {
+    _rt = context.read<AppState>().realtime;
+    _rt.joinRide(widget.ride.id);
+    _rt.on('booking.matched', (_) {
       if (mounted) _load();
     });
-    rt.on('booking.cancelled', (_) {
+    _rt.on('booking.cancelled', (_) {
       if (mounted) _load();
     });
   }
@@ -78,9 +79,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   void dispose() {
     _sub?.cancel();
-    final rt = context.read<AppState>().realtime;
-    rt.off('booking.matched');
-    rt.off('booking.cancelled');
+    _rt.off('booking.matched');
+    _rt.off('booking.cancelled');
     super.dispose();
   }
 
@@ -140,13 +140,23 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Colors.black.withOpacity(0.07)),
             ),
-            child: SwitchListTile(
-              value: _sharing,
-              onChanged: _toggleShare,
-              secondary: Icon(_sharing ? Icons.gps_fixed : Icons.gps_off,
-                  color: _sharing ? ecogoGreen : Colors.black45),
-              title: const Text('Chia sẻ vị trí trực tiếp', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(_sharing ? 'Khách và điều phối thấy bạn theo thời gian thực' : 'Đang tắt'),
+            // ClipRRect + transparent Material gives the ListTile a Material
+            // ancestor to paint ink/splashes on (clipped to the rounded card).
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  value: _sharing,
+                  onChanged: _toggleShare,
+                  secondary: Icon(_sharing ? Icons.gps_fixed : Icons.gps_off,
+                      color: _sharing ? ecogoGreen : Colors.black45),
+                  title: const Text('Chia sẻ vị trí trực tiếp',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                      _sharing ? 'Khách và điều phối thấy bạn theo thời gian thực' : 'Đang tắt'),
+                ),
+              ),
             ),
           ),
           Padding(
