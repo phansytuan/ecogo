@@ -44,7 +44,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
           windowEnd: widget.windowEnd,
           seats: widget.seats,
         );
-    setState(() => _future = f);
+    // Block body: an arrow here would return the assigned Future, which
+    // setState() rejects ("callback argument returned a Future").
+    setState(() { _future = f; });
     // Return a non-throwing future so the pull-to-refresh spinner tracks the
     // real reload; the FutureBuilder still surfaces any error via ErrorView.
     return f.then((_) {}, onError: (_) {});

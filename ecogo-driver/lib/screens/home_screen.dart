@@ -24,7 +24,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _load() {
     final f = context.read<AppState>().rides.mine();
-    setState(() => _rides = f);
+    // Block body: an arrow here would return the assigned Future, which
+    // setState() rejects ("callback argument returned a Future").
+    setState(() { _rides = f; });
     // Non-throwing so the pull-to-refresh spinner tracks the reload; the
     // FutureBuilder surfaces any error via ErrorView.
     return f.then((_) {}, onError: (_) {});
