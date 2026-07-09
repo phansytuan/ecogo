@@ -35,6 +35,13 @@ class RidesService {
     return (r as List).map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  /// A single ride's current state — used to refresh seat count / status after
+  /// a live ride-lifecycle event.
+  Future<Ride> get(String rideId) async {
+    final r = await api.get('/rides/$rideId');
+    return Ride.fromJson(r as Map<String, dynamic>);
+  }
+
   Future<List<RideBooking>> bookings(String rideId) async {
     final r = await api.get('/rides/$rideId/bookings');
     return (r as List).map((e) => RideBooking.fromJson(e as Map<String, dynamic>)).toList();

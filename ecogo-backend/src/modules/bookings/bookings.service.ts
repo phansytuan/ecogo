@@ -24,7 +24,7 @@ export class BookingsService {
     const seats = dto.seats ?? 1;
     const { pickup, dropoff } = dto;
 
-    return this.db.tx(async (client) => {
+    const booking = await this.db.tx(async (client) => {
       // Lock the ride and compute fp/fd against its route in one go.
       const rideRes = await client.query(
         `SELECT id, status, available_seats, total_seats, price_per_seat, distance_m,
@@ -103,6 +103,12 @@ export class BookingsService {
 
       return bookingRes.rows[0];
     });
+
+    // Surface the new passenger live on the driver's active-ride screen (and to
+    // dispatch), mirroring the request→match path.
+    this.realtime.emitToRide(booking.ride_id, 'booking.matched', booking);
+    this.realtime.emitToDispatch('booking.matched', booking);
+    return booking;
   }
 
   listForPassenger(passengerId: string) {

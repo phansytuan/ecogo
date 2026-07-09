@@ -28,22 +28,43 @@ class _TripScreenState extends State<TripScreen> {
   late final AppState _app;
   LatLng? _driver;
   bool _cancelling = false;
+  // Set when the trip reaches a terminal state via a live lifecycle event
+  // (driver cancelled the ride/booking, or completed the ride).
+  String? _endedMessage;
 
   @override
   void initState() {
     super.initState();
     // Capture AppState now; reading context in dispose() is unsafe.
     _app = context.read<AppState>();
-    _app.realtime.joinRide(widget.rideId);
-    _app.realtime.onRideLocation((d) {
+    final rt = _app.realtime;
+    rt.joinRide(widget.rideId);
+    rt.onRideLocation((d) {
       if (!mounted) return;
       setState(() => _driver = LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()));
     });
+    // Live ride-lifecycle updates on the ride:<id> channel.
+    rt.on('ride.cancelled', (_) => _end('Tài xế đã hủy chuyến'));
+    rt.on('ride.completed', (_) => _end('Chuyến đã hoàn thành. Cảm ơn bạn!'));
+    rt.on('booking.cancelled', (d) {
+      // Only react if it's THIS passenger's booking.
+      if (d['id'] == widget.bookingId) _end('Chỗ của bạn đã bị hủy');
+    });
+  }
+
+  void _end(String message) {
+    if (!mounted || _endedMessage != null) return;
+    setState(() => _endedMessage = message);
+    showSnack(context, message);
   }
 
   @override
   void dispose() {
-    _app.realtime.off('ride:location');
+    final rt = _app.realtime;
+    rt.off('ride:location');
+    rt.off('ride.cancelled');
+    rt.off('ride.completed');
+    rt.off('booking.cancelled');
     super.dispose();
   }
 
@@ -115,26 +136,44 @@ class _TripScreenState extends State<TripScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _driver == null ? 'Đang chờ tài xế cập nhật vị trí…' : 'Tài xế đang di chuyển',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _cancelling ? null : _cancel,
-                  icon: _cancelling
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.cancel_outlined),
-                  label: const Text('Hủy chuyến'),
+          child: _endedMessage != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_endedMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                        icon: const Icon(Icons.home_outlined),
+                        label: const Text('Về trang chủ'),
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _driver == null ? 'Đang chờ tài xế cập nhật vị trí…' : 'Tài xế đang di chuyển',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _cancelling ? null : _cancel,
+                        icon: _cancelling
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.cancel_outlined),
+                        label: const Text('Hủy chuyến'),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );

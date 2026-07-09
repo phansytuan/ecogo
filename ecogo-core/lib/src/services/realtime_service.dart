@@ -41,6 +41,12 @@ class RealtimeService {
   void onChatMessage(void Function(Map<String, dynamic>) cb) =>
       _socket?.on('chat:message', (d) => cb(Map<String, dynamic>.from(d as Map)));
 
+  /// Subscribe to an arbitrary server event on a channel the socket has joined
+  /// — used for ride-lifecycle events the backend emits to `ride:<id>`
+  /// (`booking.matched`, `booking.cancelled`, `ride.cancelled`, `ride.completed`).
+  void on(String event, void Function(Map<String, dynamic>) cb) =>
+      _socket?.on(event, (d) => cb(Map<String, dynamic>.from(d as Map)));
+
   void off(String event) => _socket?.off(event);
 
   void disposeSocket() {

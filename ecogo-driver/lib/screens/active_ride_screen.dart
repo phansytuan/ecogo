@@ -15,6 +15,8 @@ class ActiveRideScreen extends StatefulWidget {
 }
 
 class _ActiveRideScreenState extends State<ActiveRideScreen> {
+  late final AppState _app;
+  late Ride _ride;
   late Future<List<RideBooking>> _bookings;
   late Future<DynamicRoute> _route;
   late Future<CharterStatus> _charter;
@@ -26,7 +28,34 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   void initState() {
     super.initState();
+    _app = context.read<AppState>();
+    _ride = widget.ride;
+    // The driver must join the ride room to receive its lifecycle events
+    // (previously it only emitted location, so it heard nothing back).
+    _app.realtime.joinRide(widget.ride.id);
+    _app.realtime.on('booking.matched', (_) => _onLifecycle('Có khách mới ghép chuyến'));
+    _app.realtime.on('booking.cancelled', (_) => _onLifecycle('Một khách đã hủy chỗ'));
+    _app.realtime.on('ride.cancelled', (_) => _refreshRide());
+    _app.realtime.on('ride.completed', (_) => _refreshRide());
     _load();
+  }
+
+  /// A booking changed on this ride: refresh the passenger list / itinerary /
+  /// charter, and the ride itself (seat map + status).
+  void _onLifecycle(String message) {
+    if (!mounted) return;
+    showSnack(context, message);
+    _load();
+    _refreshRide();
+  }
+
+  Future<void> _refreshRide() async {
+    try {
+      final r = await _app.rides.get(widget.ride.id);
+      if (mounted) setState(() => _ride = r);
+    } catch (_) {
+      // best-effort; the lists still reflect the change
+    }
   }
 
   Future<void> _load() {
@@ -142,12 +171,17 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    final rt = _app.realtime;
+    rt.off('booking.matched');
+    rt.off('booking.cancelled');
+    rt.off('ride.cancelled');
+    rt.off('ride.completed');
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final r = widget.ride;
+    final r = _ride;
     return Scaffold(
       appBar: AppBar(title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}')),
       body: RefreshIndicator(
@@ -177,12 +211,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       );
 
   Widget _actionBar() {
-    final active = widget.ride.status == 'open' || widget.ride.status == 'full';
+    final active = _ride.status == 'open' || _ride.status == 'full';
     if (!active) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Center(
-          child: StatusChip(widget.ride.status),
+          child: StatusChip(_ride.status),
         ),
       );
     }

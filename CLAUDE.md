@@ -101,5 +101,5 @@ Copy `ecogo-backend/.env.example`. Key settings:
 
 See `PILOT_CHECKLIST.md` for the full list. The most relevant for code work:
 - Seat accounting counts a seat against the whole ride; `fp/fd` data is stored but interval-overlap logic is not yet implemented.
-- `POST /bookings` (direct booking) does not emit `booking.matched`; only the request→match and dispatcher paths do.
+- `POST /bookings` (direct booking) emits `booking.matched` to the `ride:<id>` channel + dispatch (for live driver/dispatch UI), but not the `booking.matched` app event that triggers a passenger push — only the request→match and dispatcher paths do that.
 - Driver GPS sharing works only in the foreground.
