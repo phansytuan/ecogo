@@ -36,16 +36,18 @@ class _ResultsScreenState extends State<ResultsScreen> {
     _load();
   }
 
-  void _load() {
-    setState(() {
-      _future = context.read<AppState>().matching.search(
-            pickup: widget.pickup,
-            dropoff: widget.dropoff,
-            windowStart: widget.windowStart,
-            windowEnd: widget.windowEnd,
-            seats: widget.seats,
-          );
-    });
+  Future<void> _load() {
+    final f = context.read<AppState>().matching.search(
+          pickup: widget.pickup,
+          dropoff: widget.dropoff,
+          windowStart: widget.windowStart,
+          windowEnd: widget.windowEnd,
+          seats: widget.seats,
+        );
+    setState(() => _future = f);
+    // Return a non-throwing future so the pull-to-refresh spinner tracks the
+    // real reload; the FutureBuilder still surfaces any error via ErrorView.
+    return f.then((_) {}, onError: (_) {});
   }
 
   Future<void> _book(Candidate c) async {
@@ -106,7 +108,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${widget.pickup.label} → ${widget.dropoff.label}')),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: _load,
         child: FutureBuilder<List<Candidate>>(
           future: _future,
           builder: (context, snap) {

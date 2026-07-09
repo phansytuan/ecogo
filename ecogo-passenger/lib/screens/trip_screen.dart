@@ -25,14 +25,17 @@ class TripScreen extends StatefulWidget {
 }
 
 class _TripScreenState extends State<TripScreen> {
+  late final AppState _app;
   LatLng? _driver;
+  bool _cancelling = false;
 
   @override
   void initState() {
     super.initState();
-    final rt = context.read<AppState>().realtime;
-    rt.joinRide(widget.rideId);
-    rt.onRideLocation((d) {
+    // Capture AppState now; reading context in dispose() is unsafe.
+    _app = context.read<AppState>();
+    _app.realtime.joinRide(widget.rideId);
+    _app.realtime.onRideLocation((d) {
       if (!mounted) return;
       setState(() => _driver = LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()));
     });
@@ -40,8 +43,39 @@ class _TripScreenState extends State<TripScreen> {
 
   @override
   void dispose() {
-    context.read<AppState>().realtime.off('ride:location');
+    _app.realtime.off('ride:location');
     super.dispose();
+  }
+
+  Future<void> _cancel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hủy chuyến?'),
+        content: const Text('Bạn có chắc muốn hủy đặt chỗ này?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Không')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Hủy chuyến')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _cancelling = true);
+    try {
+      await _app.bookings.cancel(widget.bookingId);
+      if (!mounted) return;
+      showSnack(context, 'Đã hủy chuyến.');
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _cancelling = false);
+      showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cancelling = false);
+      showSnack(context, 'Hủy chuyến thất bại', error: true);
+    }
   }
 
   @override
@@ -78,11 +112,29 @@ class _TripScreenState extends State<TripScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          _driver == null ? 'Đang chờ tài xế cập nhật vị trí…' : 'Tài xế đang di chuyển',
-          textAlign: TextAlign.center,
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _driver == null ? 'Đang chờ tài xế cập nhật vị trí…' : 'Tài xế đang di chuyển',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _cancelling ? null : _cancel,
+                  icon: _cancelling
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cancel_outlined),
+                  label: const Text('Hủy chuyến'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
