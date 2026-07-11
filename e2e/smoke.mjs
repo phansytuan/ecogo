@@ -103,8 +103,13 @@ async function main() {
 
   const done = await call('POST', '/transactions/complete', drv.token, { bookingId });
   ok(done.status < 300 && done.json.transaction, 'complete records transaction');
-  ok(Number(done.json.transaction.platform_fee) === 25000, '10% platform fee = 25,000');
-  ok(Number(done.json.transaction.driver_net) === 225000, 'driver net = 225,000');
+  const tx = done.json.transaction;
+  const gross = Number(tx.gross);
+  // Fare is the distance-bracket price for the sub-segment the passenger travels
+  // (pricing.ts), not the ride's flat price_per_seat — so assert the 10% split
+  // relationship against the actual gross rather than a hard-coded amount.
+  ok(Number(tx.platform_fee) === Math.round(gross * 0.1), '10% platform fee of gross');
+  ok(Number(tx.driver_net) === gross - Number(tx.platform_fee), 'driver net = gross - fee');
 
   const rate = await call('POST', '/ratings', pax.token, { bookingId, score: 5, comment: 'Tot' });
   ok(rate.status < 300 && rate.json.id, 'passenger rates the trip');

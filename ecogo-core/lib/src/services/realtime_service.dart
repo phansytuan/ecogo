@@ -21,6 +21,15 @@ class RealtimeService {
     _socket!.connect();
   }
 
+  /// Swap in a freshly-refreshed access token. The gateway verifies the JWT on
+  /// every (re)connect and disconnects on failure, so without this a socket that
+  /// reconnects after the original token expires would be rejected and go silent
+  /// (GPS tracking / chat stop). Updating `auth` means the next reconnect sends
+  /// a valid token; we don't force a reconnect here so active room joins survive.
+  void updateToken(String token) {
+    _socket?.auth = {'token': token};
+  }
+
   void joinRide(String rideId) => _socket?.emit('ride:join', {'rideId': rideId});
   void joinChat(String bookingId) => _socket?.emit('chat:join', {'bookingId': bookingId});
 
@@ -32,8 +41,11 @@ class RealtimeService {
   void onChatMessage(void Function(Map<String, dynamic>) cb) =>
       _socket?.on('chat:message', (d) => cb(Map<String, dynamic>.from(d as Map)));
 
-  /// Subscribe to any server event (e.g. 'booking.matched', 'ride.cancelled').
-  void on(String event, void Function(dynamic) cb) => _socket?.on(event, cb);
+  /// Subscribe to an arbitrary server event on a channel the socket has joined
+  /// — used for ride-lifecycle events the backend emits to `ride:<id>`
+  /// (`booking.matched`, `booking.cancelled`, `ride.cancelled`, `ride.completed`).
+  void on(String event, void Function(Map<String, dynamic>) cb) =>
+      _socket?.on(event, (d) => cb(Map<String, dynamic>.from(d as Map)));
 
   void off(String event) => _socket?.off(event);
 

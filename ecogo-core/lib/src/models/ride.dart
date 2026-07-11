@@ -6,6 +6,7 @@ class Ride {
   final int availableSeats;
   final int totalSeats;
   final int? pricePerSeat;
+  final int? distanceM;
   final String status;
 
   Ride({
@@ -16,6 +17,7 @@ class Ride {
     required this.availableSeats,
     required this.totalSeats,
     required this.pricePerSeat,
+    this.distanceM,
     required this.status,
   });
 
@@ -27,6 +29,7 @@ class Ride {
         availableSeats: (j['available_seats'] as num).toInt(),
         totalSeats: (j['total_seats'] as num).toInt(),
         pricePerSeat: (j['price_per_seat'] as num?)?.toInt(),
+        distanceM: (j['distance_m'] as num?)?.toInt(),
         status: j['status'] as String,
       );
 }

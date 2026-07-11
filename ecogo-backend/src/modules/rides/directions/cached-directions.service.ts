@@ -24,13 +24,15 @@ export class CachedDirectionsService implements DirectionsProvider {
     this.ttl = config.get<number>('directions.cacheTtlS') ?? 2_592_000; // 30 days
   }
 
-  static key(origin: LatLng, dest: LatLng, precision: number): string {
+  static key(origin: LatLng, dest: LatLng, precision: number, waypoints: LatLng[] = []): string {
     const r = (n: number) => n.toFixed(precision);
-    return `dir:${r(origin.lat)},${r(origin.lng)}:${r(dest.lat)},${r(dest.lng)}`;
+    const pt = (p: LatLng) => `${r(p.lat)},${r(p.lng)}`;
+    const via = waypoints.length > 0 ? `:via:${waypoints.map(pt).join('|')}` : '';
+    return `dir:${pt(origin)}:${pt(dest)}${via}`;
   }
 
-  async route(origin: LatLng, dest: LatLng): Promise<RouteResult> {
-    const key = CachedDirectionsService.key(origin, dest, this.precision);
+  async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
+    const key = CachedDirectionsService.key(origin, dest, this.precision, waypoints);
 
     try {
       const cached = await this.redis.get(key);
@@ -39,7 +41,7 @@ export class CachedDirectionsService implements DirectionsProvider {
       // cache read failed — fall through to the live provider
     }
 
-    const result = await this.inner.route(origin, dest);
+    const result = await this.inner.route(origin, dest, waypoints);
 
     try {
       await this.redis.set(key, JSON.stringify(result), 'EX', this.ttl);

@@ -36,16 +36,20 @@ class _ResultsScreenState extends State<ResultsScreen> {
     _load();
   }
 
-  void _load() {
-    setState(() {
-      _future = context.read<AppState>().matching.search(
-            pickup: widget.pickup,
-            dropoff: widget.dropoff,
-            windowStart: widget.windowStart,
-            windowEnd: widget.windowEnd,
-            seats: widget.seats,
-          );
-    });
+  Future<void> _load() {
+    final f = context.read<AppState>().matching.search(
+          pickup: widget.pickup,
+          dropoff: widget.dropoff,
+          windowStart: widget.windowStart,
+          windowEnd: widget.windowEnd,
+          seats: widget.seats,
+        );
+    // Block body: an arrow here would return the assigned Future, which
+    // setState() rejects ("callback argument returned a Future").
+    setState(() { _future = f; });
+    // Return a non-throwing future so the pull-to-refresh spinner tracks the
+    // real reload; the FutureBuilder still surfaces any error via ErrorView.
+    return f.then((_) {}, onError: (_) {});
   }
 
   Future<void> _book(Candidate c) async {
@@ -92,10 +96,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
           );
       if (!mounted) return;
       showSnack(context, 'Đã gửi yêu cầu — hệ thống sẽ ghép hoặc chuyển điều phối viên.');
-    } on ApiException catch (e) {
-      if (mounted) showSnack(context, e.friendly, error: true);
     } catch (_) {
-      if (mounted) showSnack(context, 'Gửi yêu cầu thất bại', error: true);
+      if (!mounted) return;
+      showSnack(context, 'Gửi yêu cầu thất bại', error: true);
     } finally {
       if (mounted) setState(() => _requesting = false);
     }
@@ -107,7 +110,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${widget.pickup.label} → ${widget.dropoff.label}')),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: _load,
         child: FutureBuilder<List<Candidate>>(
           future: _future,
           builder: (context, snap) {
@@ -186,7 +189,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                           _row(Icons.alt_route, 'Lệch tuyến', '${c.totalOffsetM} m'),
                           _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
                           if (c.pricePerSeat != null)
-                            _row(Icons.payments, 'Giá mỗi ghế', formatVnd(c.pricePerSeat!)),
+                            _row(Icons.payments, 'Giá mỗi ghế', '${c.pricePerSeat!.toString()}đ'),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,

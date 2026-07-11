@@ -18,6 +18,10 @@ export default () => ({
     cachePrecision: parseInt(process.env.DIRECTIONS_CACHE_PRECISION ?? '4', 10),
     cacheTtlS: parseInt(process.env.DIRECTIONS_CACHE_TTL_S ?? '2592000', 10),
   },
+  rides: {
+    maxBackdateMin: parseInt(process.env.RIDES_MAX_BACKDATE_MIN ?? '60', 10),
+    maxAheadDays: parseInt(process.env.RIDES_MAX_AHEAD_DAYS ?? '30', 10),
+  },
   maintenance: {
     rideGraceHours: parseInt(process.env.MAINTENANCE_RIDE_GRACE_HOURS ?? '2', 10),
     requestGraceMin: parseInt(process.env.MAINTENANCE_REQUEST_GRACE_MIN ?? '30', 10),

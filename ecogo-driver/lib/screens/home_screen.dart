@@ -22,10 +22,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
-  void _load() {
-    setState(() {
-      _rides = context.read<AppState>().rides.mine();
-    });
+  Future<void> _load() {
+    final f = context.read<AppState>().rides.mine();
+    // Block body: an arrow here would return the assigned Future, which
+    // setState() rejects ("callback argument returned a Future").
+    setState(() { _rides = f; });
+    // Non-throwing so the pull-to-refresh spinner tracks the reload; the
+    // FutureBuilder surfaces any error via ErrorView.
+    return f.then((_) {}, onError: (_) {});
   }
 
   @override
@@ -62,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: _load,
         child: FutureBuilder<List<Ride>>(
           future: _rides,
           builder: (context, snap) {
@@ -91,11 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () async {
-                        await Navigator.push(
+                        final changed = await Navigator.push<bool>(
                           context,
                           MaterialPageRoute(builder: (_) => ActiveRideScreen(ride: r)),
                         );
-                        if (mounted) _load();
+                        if (changed == true && mounted) _load();
                       },
                       child: Padding(
                         padding: const EdgeInsets.all(16),

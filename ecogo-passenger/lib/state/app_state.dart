@@ -12,7 +12,8 @@ class AppState extends ChangeNotifier {
   final RealtimeService realtime = RealtimeService(Config.wsBase);
 
   AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
-    api = ApiClient(Config.apiBase, tokens, onUnauthorized: _onUnauthorized);
+    api = ApiClient(Config.apiBase, tokens,
+        onUnauthorized: _onUnauthorized, onTokenRefreshed: realtime.updateToken);
     auth = AuthService(api, tokens);
     matching = MatchingService(api);
     bookings = BookingsService(api);

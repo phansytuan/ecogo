@@ -10,6 +10,12 @@ interface BookingMatchedEvent {
   by: 'auto' | 'dispatcher';
 }
 
+interface RideCompletedEvent {
+  rideId: string;
+  driverId: string;
+  bookings: { id: string; passengerId: string }[];
+}
+
 interface RideCancelledEvent {
   rideId: string;
   driverId: string;
@@ -74,6 +80,18 @@ export class NotificationsListener {
         b.passengerId,
         'Chuyến đã bị huỷ',
         'Tài xế đã huỷ chuyến. Mở app để tìm chuyến khác.',
+        { bookingId: b.id },
+      );
+    }
+  }
+
+  @OnEvent('ride.completed')
+  async onRideCompleted(e: RideCompletedEvent) {
+    for (const b of e.bookings) {
+      await this.notifications.pushToUser(
+        b.passengerId,
+        'Chuyến đã hoàn thành',
+        'Cảm ơn bạn đã đi cùng ECOGO. Hãy đánh giá tài xế nhé!',
         { bookingId: b.id },
       );
     }

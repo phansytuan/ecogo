@@ -51,3 +51,29 @@ describe('CachedDirectionsService', () => {
     expect(r.durationS).toBe(7);
   });
 });
+
+describe('CachedDirectionsService waypoints', () => {
+  it('waypoints produce a different cache key than the direct route', () => {
+    const a = { lat: 1, lng: 1 };
+    const b = { lat: 2, lng: 2 };
+    const direct = CachedDirectionsService.key(a, b, 4);
+    const via = CachedDirectionsService.key(a, b, 4, [{ lat: 1.5, lng: 1.5 }]);
+    expect(via).not.toBe(direct);
+    expect(via).toContain('via');
+  });
+
+  it('passes waypoints through to the inner provider', async () => {
+    let seen: unknown;
+    const inner = {
+      route: async (_o: unknown, _d: unknown, w: unknown) => {
+        seen = w;
+        return { coordinates: [], durationS: 5 };
+      },
+    };
+    const redis = { get: async () => null, set: async () => {} } as any;
+    const svc = new CachedDirectionsService(inner as any, redis, cfg());
+    const wp = [{ lat: 1.5, lng: 1.5 }];
+    await svc.route({ lat: 1, lng: 1 }, { lat: 2, lng: 2 }, wp);
+    expect(seen).toEqual(wp);
+  });
+});
