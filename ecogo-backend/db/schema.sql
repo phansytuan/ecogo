@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   fd            double precision,
   seats         int NOT NULL DEFAULT 1 CHECK (seats > 0),
   fare          numeric(12,0),
+  seat_ids      text[],
   status        text NOT NULL DEFAULT 'pending'
                 CHECK (status IN ('pending','matched','confirmed','ongoing',
                                   'completed','cancelled','no_match')),
@@ -126,7 +127,8 @@ CREATE TABLE IF NOT EXISTS ratings (
   ratee_id    uuid NOT NULL REFERENCES users(id),
   score       int  NOT NULL CHECK (score BETWEEN 1 AND 5),
   comment     text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (booking_id, rater_id)
 );
 CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_id);
 
@@ -143,3 +145,17 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_open ON support_tickets(created_at) WHERE status = 'open';
+
+CREATE TABLE IF NOT EXISTS ride_seats (
+  ride_id     uuid NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+  seat_id     text NOT NULL,
+  row_num     int  NOT NULL,
+  col_num     int  NOT NULL,
+  status      text NOT NULL DEFAULT 'free'
+              CHECK (status IN ('free','locked','booked')),
+  booking_id  uuid REFERENCES bookings(id) ON DELETE SET NULL,
+  note        text,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (ride_id, seat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ride_seats_booking ON ride_seats(booking_id);

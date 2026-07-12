@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
-import 'trip_screen.dart';
+import 'booking_details_screen.dart';
 
 class ResultsScreen extends StatefulWidget {
   final Stop pickup;
@@ -27,7 +27,6 @@ class ResultsScreen extends StatefulWidget {
 
 class _ResultsScreenState extends State<ResultsScreen> {
   late Future<List<Candidate>> _future;
-  String? _bookingRideId;
   bool _requesting = false;
 
   @override
@@ -36,52 +35,37 @@ class _ResultsScreenState extends State<ResultsScreen> {
     _load();
   }
 
-  Future<void> _load() {
-    final f = context.read<AppState>().matching.search(
-          pickup: widget.pickup,
-          dropoff: widget.dropoff,
-          windowStart: widget.windowStart,
-          windowEnd: widget.windowEnd,
-          seats: widget.seats,
-        );
-    // Block body: an arrow here would return the assigned Future, which
-    // setState() rejects ("callback argument returned a Future").
-    setState(() { _future = f; });
-    // Return a non-throwing future so the pull-to-refresh spinner tracks the
-    // real reload; the FutureBuilder still surfaces any error via ErrorView.
-    return f.then((_) {}, onError: (_) {});
-  }
-
-  Future<void> _book(Candidate c) async {
-    setState(() => _bookingRideId = c.rideId);
-    try {
-      final b = await context.read<AppState>().bookings.book(
-            rideId: c.rideId,
+  void _load() {
+    setState(() {
+      _future = context.read<AppState>().matching.search(
             pickup: widget.pickup,
             dropoff: widget.dropoff,
+            windowStart: widget.windowStart,
+            windowEnd: widget.windowEnd,
             seats: widget.seats,
           );
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TripScreen(
-            bookingId: b.id,
-            rideId: c.rideId,
-            pickup: widget.pickup,
-            dropoff: widget.dropoff,
-          ),
+    });
+  }
+
+  /// Booking now goes through a details step: precise map points, and — for
+  /// multi-seat bookings — the additional passengers' details.
+  bool _navigating = false;
+  Future<void> _openDetails(Candidate c) async {
+    if (_navigating) return;
+    _navigating = true;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BookingDetailsScreen(
+          rideId: c.rideId,
+          pickupStop: widget.pickup,
+          dropoffStop: widget.dropoff,
+          seats: widget.seats,
+          availableSeats: c.availableSeats,
         ),
-      );
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _bookingRideId = null);
-      showSnack(context, e.friendly, error: true);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _bookingRideId = null);
-      showSnack(context, 'Đặt chỗ thất bại', error: true);
-    }
+      ),
+    );
+    _navigating = false;
   }
 
   Future<void> _createRequest() async {
@@ -107,10 +91,11 @@ class _ResultsScreenState extends State<ResultsScreen> {
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('HH:mm');
+    final money = NumberFormat.decimalPattern('vi');
     return Scaffold(
       appBar: AppBar(title: Text('${widget.pickup.label} → ${widget.dropoff.label}')),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () async => _load(),
         child: FutureBuilder<List<Candidate>>(
           future: _future,
           builder: (context, snap) {
@@ -147,8 +132,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
               itemCount: list.length,
               itemBuilder: (_, i) {
                 final c = list[i];
-                final booking = _bookingRideId == c.rideId;
                 return FadeInSlide(
+                  key: ValueKey(c.rideId),
                   delay: staggerDelay(i),
                   child: Card(
                     child: Padding(
@@ -165,6 +150,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(c.driverName ?? 'Tài xế',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontWeight: FontWeight.w600)),
                                     Text('★ ${c.driverRating.toStringAsFixed(1)}',
                                         style: const TextStyle(color: Color(0xFFC98A2B), fontSize: 12)),
@@ -189,17 +176,13 @@ class _ResultsScreenState extends State<ResultsScreen> {
                           _row(Icons.alt_route, 'Lệch tuyến', '${c.totalOffsetM} m'),
                           _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
                           if (c.pricePerSeat != null)
-                            _row(Icons.payments, 'Giá mỗi ghế', '${c.pricePerSeat!.toString()}đ'),
+                            _row(Icons.payments, 'Giá mỗi ghế', '${money.format(c.pricePerSeat)}đ'),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: booking ? null : () => _book(c),
-                              child: booking
-                                  ? const SizedBox(
-                                      width: 18, height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Text('Đặt chỗ'),
+                              onPressed: () => _openDetails(c),
+                              child: const Text('Đặt chỗ'),
                             ),
                           ),
                         ],

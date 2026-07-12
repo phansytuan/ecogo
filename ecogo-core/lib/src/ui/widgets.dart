@@ -144,14 +144,18 @@ class StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final map = {
       'pending': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Chờ ghép'),
+      'processing': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Đang xử lý'),
       'no_match': (const Color(0xFFB23B2E), const Color(0xFFF7DDD8), 'Chưa ghép'),
       'matched': (const Color(0xFF1F6B45), const Color(0xFFD7EFE0), 'Đã ghép'),
       'confirmed': (const Color(0xFF1F5FA8), const Color(0xFFD6E6F7), 'Đã xác nhận'),
-      'completed': (const Color(0xFF555), const Color(0xFFEAEAEA), 'Hoàn thành'),
+      'ongoing': (const Color(0xFF1F5FA8), const Color(0xFFD6E6F7), 'Đang đi'),
+      'completed': (const Color(0xFF555555), const Color(0xFFEAEAEA), 'Hoàn thành'),
       'cancelled': (const Color(0xFFB23B2E), const Color(0xFFF1E2E0), 'Đã huỷ'),
+      'expired': (const Color(0xFF555555), const Color(0xFFEAEAEA), 'Hết hạn'),
       'open': (const Color(0xFF1F6B45), const Color(0xFFD7EFE0), 'Đang mở'),
+      'full': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Đã đầy'),
     };
-    final entry = map[status] ?? (const Color(0xFF555), const Color(0xFFEAEAEA), status);
+    final entry = map[status] ?? (const Color(0xFF555555), const Color(0xFFEAEAEA), status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(color: entry.$2, borderRadius: BorderRadius.circular(20)),

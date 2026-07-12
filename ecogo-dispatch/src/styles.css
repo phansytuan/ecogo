@@ -238,3 +238,22 @@ button:disabled { cursor: default; }
 .toast-error { border-color: rgba(224,90,77,0.4); }
 
 .err-inline { color: var(--danger); font-size: 12px; }
+
+
+/* Dispatch lanes: Received vs In Progress */
+.lane-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px 6px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #6b7a70;
+}
+.lane-empty { padding: 8px 14px 14px; font-size: 12px; color: #93a09a; }
+.badge-warn {
+  background: #FBF1D2; color: #8A6D1A; border-radius: 10px;
+  padding: 1px 7px; font-size: 11px; font-weight: 600;
+}
+.btn-xs { padding: 2px 8px; font-size: 11px; margin-left: auto; }
+.trip-panel .trip-body { padding: 12px 14px; }
+.trip-route { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; margin: 0 0 8px; }
+.kv dt { font-size: 12px; color: #6b7a70; }
+.kv dd { margin: 0; font-size: 13px; font-weight: 600; color: #1B2B22; }

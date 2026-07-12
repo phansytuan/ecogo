@@ -10,6 +10,7 @@ import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { canFit, tightestFreeSeats } from '../matching/segment-capacity';
 import { quoteFare } from '../pricing/pricing';
+import { validateManifest } from './manifest';
 import { CreateBookingDto } from './bookings.dto';
 
 @Injectable()
@@ -22,9 +23,13 @@ export class BookingsService {
 
   async create(passengerId: string, dto: CreateBookingDto) {
     const seats = dto.seats ?? 1;
+    // Multi-seat bookings must name the additional travellers.
+    const manifest = validateManifest(seats, dto.companions ?? []);
+    if (!manifest.ok) throw new BadRequestException(manifest.message);
+
     const { pickup, dropoff } = dto;
 
-    const booking = await this.db.tx(async (client) => {
+    return this.db.tx(async (client) => {
       // Lock the ride and compute fp/fd against its route in one go.
       const rideRes = await client.query(
         `SELECT id, status, available_seats, total_seats, price_per_seat, distance_m,
@@ -71,12 +76,13 @@ export class BookingsService {
       const bookingRes = await client.query(
         `INSERT INTO bookings
            (ride_id, passenger_id, pickup, dropoff, pickup_label, dropoff_label,
-            fp, fd, seats, fare, status, matched_by)
+            pickup_address, dropoff_address, fp, fd, seats, fare, status, matched_by)
          VALUES ($1,$2,
                  ST_SetSRID(ST_MakePoint($3,$4),4326),
                  ST_SetSRID(ST_MakePoint($5,$6),4326),
-                 $7,$8,$9,$10,$11,$12,'matched','auto')
-         RETURNING id, ride_id, passenger_id, fp, fd, seats, fare, status, created_at`,
+                 $7,$8,$9,$10,$11,$12,$13,$14,'matched','auto')
+         RETURNING id, ride_id, passenger_id, fp, fd, seats, fare, status,
+                   pickup_address, dropoff_address, created_at`,
         [
           dto.rideId,
           passengerId,
@@ -86,35 +92,105 @@ export class BookingsService {
           dropoff.lat,
           pickup.label ?? null,
           dropoff.label ?? null,
+          dto.pickupAddress ?? null,
+          dto.dropoffAddress ?? null,
           ride.fp,
           ride.fd,
           seats,
           fare,
         ],
       );
+      const booking = bookingRes.rows[0];
 
-      const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);
-      await client.query(
-        `UPDATE rides SET available_seats = $2,
-                          status = CASE WHEN $2 = 0 THEN 'full' ELSE status END
-         WHERE id = $1`,
-        [dto.rideId, remaining],
-      );
+      // Companion manifest — same transaction, so a booking never exists with a
+      // half-written passenger list.
+      const companions = dto.companions ?? [];
+      for (const c of companions) {
+        await client.query(
+          `INSERT INTO booking_passengers (booking_id, full_name, phone, email)
+           VALUES ($1,$2,$3,$4)`,
+          [booking.id, c.fullName.trim(), c.phone.trim(), c.email?.trim() || null],
+        );
+      }
 
-      return bookingRes.rows[0];
+      // Specific seat selection (optional). If the passenger picked seats, they
+      // must exactly match the seat count, be currently free, and get claimed.
+      // Locked seats (driver's offline reservations) are never 'free', so they
+      // can't be booked online.
+      const seatIds = dto.seatIds ?? [];
+      if (seatIds.length > 0) {
+        if (seatIds.length !== seats) {
+          throw new BadRequestException(
+            `Select exactly ${seats} seat(s) to match the booking`,
+          );
+        }
+        for (const seatId of seatIds) {
+          const r = await client.query(
+            `UPDATE ride_seats SET status = 'booked', booking_id = $3, updated_at = now()
+             WHERE ride_id = $1 AND seat_id = $2 AND status = 'free'
+             RETURNING seat_id`,
+            [dto.rideId, seatId, booking.id],
+          );
+          if (r.rowCount === 0) {
+            throw new ConflictException(`Seat ${seatId} is no longer available`);
+          }
+        }
+        await client.query(`UPDATE bookings SET seat_ids = $2 WHERE id = $1`, [
+          booking.id,
+          seatIds,
+        ]);
+        booking.seat_ids = seatIds;
+      }
+
+      // available_seats reflects the seat map when a ride has one; otherwise the
+      // segment-capacity remaining count.
+      const hasSeatMap =
+        (
+          await client.query(`SELECT 1 FROM ride_seats WHERE ride_id = $1 LIMIT 1`, [
+            dto.rideId,
+          ])
+        ).rowCount! > 0;
+      if (hasSeatMap) {
+        await client.query(
+          `UPDATE rides SET available_seats =
+             (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free'),
+             status = CASE WHEN (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free') = 0
+                           THEN 'full' ELSE status END
+           WHERE id = $1`,
+          [dto.rideId],
+        );
+      } else {
+        const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);
+        await client.query(
+          `UPDATE rides SET available_seats = $2,
+                            status = CASE WHEN $2 = 0 THEN 'full' ELSE status END
+           WHERE id = $1`,
+          [dto.rideId, remaining],
+        );
+      }
+      this.realtime.emitToRide(dto.rideId, 'seatmap.updated', { rideId: dto.rideId });
+
+      return { ...booking, companions };
     });
-
-    // Surface the new passenger live on the driver's active-ride screen (and to
-    // dispatch), mirroring the request→match path.
-    this.realtime.emitToRide(booking.ride_id, 'booking.matched', booking);
-    this.realtime.emitToDispatch('booking.matched', booking);
-    return booking;
   }
 
   listForPassenger(passengerId: string) {
     return this.db.query(
-      `SELECT id, ride_id, seats, fare, status, created_at
-       FROM bookings WHERE passenger_id = $1 ORDER BY created_at DESC`,
+      `SELECT b.id, b.ride_id, b.seats, b.fare, b.status,
+              b.pickup_label, b.dropoff_label, b.pickup_address, b.dropoff_address,
+              ST_Y(b.pickup) AS pickup_lat, ST_X(b.pickup) AS pickup_lng,
+              ST_Y(b.dropoff) AS dropoff_lat, ST_X(b.dropoff) AS dropoff_lng,
+              b.created_at,
+              r.origin_label, r.dest_label, r.departure_time, r.status AS ride_status,
+              dr.full_name AS driver_name, dr.phone AS driver_phone,
+              (SELECT score FROM ratings ra
+                WHERE ra.booking_id = b.id AND ra.rater_id = $1) AS my_rating
+       FROM bookings b
+       LEFT JOIN rides r  ON r.id = b.ride_id
+       LEFT JOIN users dr ON dr.id = r.driver_id
+       WHERE b.passenger_id = $1
+         AND b.status <> 'cancelled'
+       ORDER BY b.created_at DESC`,
       [passengerId],
     );
   }
@@ -144,7 +220,7 @@ export class BookingsService {
         `SELECT b.id, b.ride_id, b.passenger_id, b.status, b.fp, b.fd, b.seats,
                 r.driver_id, r.total_seats
          FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id
-         WHERE b.id = $1 FOR UPDATE OF b`,
+         WHERE b.id = $1 FOR UPDATE`,
         [bookingId],
       );
       const row = res.rows[0];
@@ -177,6 +253,35 @@ export class BookingsService {
       }
 
       await client.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [bookingId]);
+
+      // Release any specific seats this booking held.
+      await client.query(
+        `UPDATE ride_seats SET status = 'free', booking_id = NULL, updated_at = now()
+         WHERE ride_id = $1 AND booking_id = $2`,
+        [row.ride_id, bookingId],
+      );
+
+      // If this ride uses a seat map, availability is the free-seat count;
+      // otherwise fall back to per-segment capacity.
+      const hasSeatMap =
+        (
+          await client.query(`SELECT 1 FROM ride_seats WHERE ride_id = $1 LIMIT 1`, [
+            row.ride_id,
+          ])
+        ).rowCount! > 0;
+      if (hasSeatMap) {
+        await client.query(
+          `UPDATE rides SET available_seats =
+             (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free'),
+             status = CASE WHEN status = 'full'
+                            AND (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free') > 0
+                           THEN 'open' ELSE status END
+           WHERE id = $1`,
+          [row.ride_id],
+        );
+        this.realtime.emitToRide(row.ride_id, 'seatmap.updated', { rideId: row.ride_id });
+        return base;
+      }
 
       // Recompute availability from the remaining active bookings and reopen if needed.
       const remaining = (

@@ -109,12 +109,12 @@ export class AssignmentService {
         `UPDATE bookings
          SET ride_id = $2, fp = $3, fd = $4, fare = $5,
              status = 'matched', matched_by = $6, dispatched_by = $7
-         WHERE id = $1 AND status IN ('pending','no_match')
+         WHERE id = $1 AND status IN ('pending','no_match','processing')
          RETURNING id, ride_id, passenger_id, seats, fare, status, matched_by`,
         [bookingId, rideId, loc.fp, loc.fd, fare, by, dispatcherId ?? null],
       );
       if (bookingRes.rows.length === 0) {
-        throw new ConflictException('Request is no longer pending');
+        throw new ConflictException('Request is no longer awaiting assignment');
       }
 
       const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);

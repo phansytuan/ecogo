@@ -3,6 +3,7 @@ import { KpiBar } from './KpiBar';
 import { QueuePanel } from './QueuePanel';
 import { MapPanel } from './MapPanel';
 import { CandidatesPanel } from './CandidatesPanel';
+import { TripPanel } from './TripPanel';
 
 const STATUS_LABEL = { online: 'Trực tuyến', connecting: 'Đang kết nối…', offline: 'Mất kết nối' };
 
@@ -31,16 +32,21 @@ export function Cockpit({ onLogout }: { onLogout: () => void }) {
           error={d.queueError}
           onSelect={d.select}
           onRetry={() => d.refresh()}
+          onRelease={d.release}
         />
         <MapPanel selected={d.selected} drivers={Object.values(d.drivers)} />
-        <CandidatesPanel
-          selected={d.selected}
-          candidates={d.candidates}
-          loading={d.loadingCandidates}
-          busy={d.busyId != null}
-          onClaim={d.claim}
-          onAssign={d.assign}
-        />
+        {d.trip ? (
+          <TripPanel trip={d.trip} onClose={d.clearTrip} />
+        ) : (
+          <CandidatesPanel
+            selected={d.selected}
+            candidates={d.candidates}
+            loading={d.loadingCandidates}
+            busy={d.busyId != null}
+            onClaim={d.claim}
+            onAssign={d.assign}
+          />
+        )}
       </div>
     </div>
   );
