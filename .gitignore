@@ -1,6 +1,9 @@
 # Claude Code local memory — not part of the project
 .claude/
 
+# Local secrets / env overrides (e.g. GOONG_API_KEY) — never commit
+.env
+
 # OS
 .DS_Store
 Thumbs.db

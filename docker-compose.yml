@@ -30,7 +30,12 @@ services:
       JWT_SECRET: dev-secret-change-me
       JWT_EXPIRES_IN: 30d
       OTP_PROVIDER: fake
-      DIRECTIONS_PROVIDER: fake
+      # Directions provider is driven by a root .env (git-ignored). Defaults to
+      # the offline straight-line 'fake' provider. Set DIRECTIONS_PROVIDER=goong
+      # and GOONG_API_KEY=<key> in ./.env to route along real roads — required
+      # for corridor sub-segment matching to find rides at intermediate cities.
+      DIRECTIONS_PROVIDER: ${DIRECTIONS_PROVIDER:-fake}
+      GOONG_API_KEY: ${GOONG_API_KEY:-}
       # Dispatch console (5173) + API (3000) + Flutter web dev ports (driver 5300, passenger 5301)
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:5300,http://localhost:5301
     depends_on:
