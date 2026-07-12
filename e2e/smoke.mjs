@@ -43,17 +43,38 @@ async function login(phone) {
   return { token: r2.json.accessToken, id: r2.json.user.id };
 }
 
-// Two points that lie exactly on the Vinh -> Ha Noi straight line, so they match
-// reliably even with the offline 'fake' directions provider.
 const VINH = { lat: 18.679, lng: 105.681, label: 'Vinh' };
 const HANOI = { lat: 21.0278, lng: 105.8342, label: 'Ha Noi' };
-const lerp = (a, b, t) => ({
-  lat: a.lat + (b.lat - a.lat) * t,
-  lng: a.lng + (b.lng - a.lng) * t,
-  label: `pt-${t}`,
-});
-const PICK = lerp(VINH, HANOI, 0.3);
-const DROP = lerp(VINH, HANOI, 0.6);
+
+// A pickup/dropoff that lies ON the posted ride's route, at fraction `t` of its
+// length. Derived from the ride's actual geometry so corridor matching works
+// with any directions provider — the straight-line 'fake' line OR goong's real
+// road (whose curve leaves the straight chord off-route beyond tolerance).
+function routePoint(route, t, label) {
+  const coords = (typeof route === 'string' ? JSON.parse(route) : route).coordinates;
+  const seg = [];
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]);
+    seg.push(d);
+    total += d;
+  }
+  let target = t * total;
+  let acc = 0;
+  for (let i = 1; i < coords.length; i++) {
+    if (acc + seg[i - 1] >= target) {
+      const f = seg[i - 1] === 0 ? 0 : (target - acc) / seg[i - 1];
+      return {
+        lat: coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * f,
+        lng: coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * f,
+        label,
+      };
+    }
+    acc += seg[i - 1];
+  }
+  const last = coords[coords.length - 1];
+  return { lat: last[1], lng: last[0], label };
+}
 
 async function main() {
   const now = Date.now();
@@ -79,6 +100,11 @@ async function main() {
   });
   ok(ride.status < 300 && ride.json.id, 'post ride Vinh -> Ha Noi');
   const rideId = ride.json.id;
+
+  // Pickup/dropoff on the ride's real route, so the sub-segment matches under
+  // either directions provider.
+  const PICK = routePoint(ride.json.route, 0.3, 'pickup');
+  const DROP = routePoint(ride.json.route, 0.6, 'dropoff');
 
   console.log('--- Passenger ---');
   const pax = await login('0911000002');
