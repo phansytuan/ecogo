@@ -23,6 +23,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
   bool _quoting = false;
   bool _priceEdited = false;
   bool _busy = false;
+  int _quoteRequest = 0;
 
   @override
   void initState() {
@@ -51,11 +52,23 @@ class _PostRideScreenState extends State<PostRideScreen> {
   }
 
   Future<void> _fetchQuote() async {
-    if (_origin.label == _dest.label) return;
+    final request = ++_quoteRequest;
+    final origin = _origin;
+    final dest = _dest;
+    if (origin.label == dest.label) {
+      setState(() {
+        _quote = null;
+        _quoting = false;
+      });
+      return;
+    }
     setState(() => _quoting = true);
     try {
-      final q = await context.read<AppState>().rides.quote(origin: _origin, dest: _dest);
-      if (!mounted) return;
+      final q = await context
+          .read<AppState>()
+          .rides
+          .quote(origin: origin, dest: dest);
+      if (!mounted || request != _quoteRequest) return;
       setState(() {
         _quote = q;
         if (!_priceEdited) _price.text = q.pricePerSeat.toString();
@@ -63,26 +76,29 @@ class _PostRideScreenState extends State<PostRideScreen> {
     } catch (_) {
       // best-effort; leave the price as-is
     } finally {
-      if (mounted) setState(() => _quoting = false);
+      if (mounted && request == _quoteRequest) setState(() => _quoting = false);
     }
   }
 
   Future<void> _pickDateTime() async {
     final d = await showDatePicker(
       context: context,
-      initialDate: _departure.isBefore(DateTime.now()) ? DateTime.now() : _departure,
+      initialDate:
+          _departure.isBefore(DateTime.now()) ? DateTime.now() : _departure,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 30)),
     );
     if (d == null || !mounted) return;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_departure));
+    final t = await showTimePicker(
+        context: context, initialTime: TimeOfDay.fromDateTime(_departure));
     if (t == null || !mounted) return;
     final picked = DateTime(d.year, d.month, d.day, t.hour, t.minute);
     // The backend allows a small backdate window for drivers logging a trip
     // late; anything older is a data-entry mistake. Catch it here for a
     // friendlier message than a 400.
     if (picked.isBefore(DateTime.now().subtract(const Duration(minutes: 60)))) {
-      showSnack(context, 'Giờ khởi hành không được quá 60 phút trước', error: true);
+      showSnack(context, 'Giờ khởi hành không được quá 60 phút trước',
+          error: true);
       return;
     }
     setState(() => _departure = picked);
@@ -97,7 +113,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Điểm đi/đến phải khác nhau', error: true);
       return;
     }
-    if (_departure.isBefore(DateTime.now().subtract(const Duration(minutes: 60)))) {
+    if (_departure
+        .isBefore(DateTime.now().subtract(const Duration(minutes: 60)))) {
       showSnack(context, 'Giờ khởi hành đã quá hạn — chọn lại', error: true);
       return;
     }
@@ -153,7 +170,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
                   MaterialPageRoute(builder: (_) => const VehicleScreen()),
                 ).then((ok) {
                   if (ok == true && mounted) {
-                    setState(() => _vehicles = context.read<AppState>().vehicles.mine());
+                    setState(() =>
+                        _vehicles = context.read<AppState>().vehicles.mine());
                   }
                 }),
                 child: const Text('Đăng ký xe'),
@@ -172,7 +190,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
                 initialValue: _vehicle,
                 decoration: const InputDecoration(labelText: 'Xe'),
                 items: list
-                    .map((v) => DropdownMenuItem(value: v, child: Text('${v.plate} · ${v.seats} ghế')))
+                    .map((v) => DropdownMenuItem(
+                        value: v, child: Text('${v.plate} · ${v.seats} ghế')))
                     .toList(),
                 onChanged: _onVehicleChanged,
               ),
@@ -207,9 +226,12 @@ class _PostRideScreenState extends State<PostRideScreen> {
                   DropdownButton<int>(
                     value: _seats,
                     items: seats
-                        .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
+                        .map((n) =>
+                            DropdownMenuItem(value: n, child: Text('$n')))
                         .toList(),
-                    onChanged: _busy ? null : (v) => setState(() => _seats = v ?? _seats),
+                    onChanged: _busy
+                        ? null
+                        : (v) => setState(() => _seats = v ?? _seats),
                   ),
                 ],
               ),
@@ -220,7 +242,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
                 onChanged: (_) => _priceEdited = true,
                 decoration: const InputDecoration(
                   labelText: 'Giá mỗi ghế (đ)',
-                  helperText: 'Tự động tính theo quãng đường — bạn có thể chỉnh.',
+                  helperText:
+                      'Tự động tính theo quãng đường — bạn có thể chỉnh.',
                 ),
               ),
               const SizedBox(height: 12),
@@ -230,8 +253,10 @@ class _PostRideScreenState extends State<PostRideScreen> {
                 onPressed: _busy ? null : _post,
                 child: _busy
                     ? const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
                     : const Text('Đăng chuyến'),
               ),
               const SizedBox(height: 24),
@@ -246,7 +271,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
     final money = NumberFormat.decimalPattern('vi');
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: const Color(0xFFEAF4EE), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFEAF4EE),
+          borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
           const Icon(Icons.route, color: ecogoGreen),
@@ -263,7 +290,10 @@ class _PostRideScreenState extends State<PostRideScreen> {
                       ),
           ),
           if (_quoting)
-            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2)),
         ],
       ),
     );
@@ -272,7 +302,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
   Widget _note() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFFFBF6EC), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFFBF6EC),
+          borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -293,7 +325,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
         Icon(icon, size: 18, color: const Color(0xFF8A6D1A)),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(text, style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.7))),
+          child: Text(text,
+              style: TextStyle(
+                  fontSize: 12, color: Colors.black.withValues(alpha: 0.7))),
         ),
       ],
     );
@@ -306,7 +340,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
         child: DropdownButton<Stop>(
           value: value,
           isExpanded: true,
-          items: kStops.map((s) => DropdownMenuItem(value: s, child: Text(s.label))).toList(),
+          items: kStops
+              .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+              .toList(),
           onChanged: _busy ? null : (s) => onChanged(s!),
         ),
       ),

@@ -6,16 +6,22 @@ class FadeInSlide extends StatefulWidget {
   final Widget child;
   final Duration delay;
   final double offsetY;
-  const FadeInSlide({super.key, required this.child, this.delay = Duration.zero, this.offsetY = 14});
+  const FadeInSlide(
+      {super.key,
+      required this.child,
+      this.delay = Duration.zero,
+      this.offsetY = 14});
 
   @override
   State<FadeInSlide> createState() => _FadeInSlideState();
 }
 
-class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 360));
-  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+class _FadeInSlideState extends State<FadeInSlide>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 360));
+  late final Animation<double> _a =
+      CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
 
   @override
   void initState() {
@@ -37,7 +43,8 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
       animation: _a,
       builder: (_, child) => Opacity(
         opacity: _a.value,
-        child: Transform.translate(offset: Offset(0, (1 - _a.value) * widget.offsetY), child: child),
+        child: Transform.translate(
+            offset: Offset(0, (1 - _a.value) * widget.offsetY), child: child),
       ),
       child: widget.child,
     );
@@ -59,7 +66,8 @@ class LoadingView extends StatelessWidget {
           const CircularProgressIndicator(strokeWidth: 2.6),
           if (label != null) ...[
             const SizedBox(height: 14),
-            Text(label!, style: TextStyle(color: Colors.black.withValues(alpha: 0.55))),
+            Text(label!,
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.55))),
           ],
         ],
       ),
@@ -71,7 +79,8 @@ class EmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
   final Widget? action;
-  const EmptyState({super.key, required this.icon, required this.message, this.action});
+  const EmptyState(
+      {super.key, required this.icon, required this.message, this.action});
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -84,7 +93,8 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: 14),
             Text(message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 14)),
+                style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.55), fontSize: 14)),
             if (action != null) ...[const SizedBox(height: 18), action!],
           ],
         ),
@@ -105,7 +115,8 @@ class ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 44, color: Color(0xFFC96442)),
+            const Icon(Icons.cloud_off_rounded,
+                size: 44, color: Color(0xFFC96442)),
             const SizedBox(height: 14),
             Text(message,
                 textAlign: TextAlign.center,
@@ -131,7 +142,8 @@ void showSnack(BuildContext context, String message, {bool error = false}) {
     ..showSnackBar(SnackBar(
       content: Text(message),
       behavior: SnackBarBehavior.floating,
-      backgroundColor: error ? const Color(0xFFC0392B) : const Color(0xFF2D6A4F),
+      backgroundColor:
+          error ? const Color(0xFFC0392B) : const Color(0xFF2D6A4F),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(12),
     ));
@@ -145,23 +157,42 @@ class StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final map = {
       'pending': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Chờ ghép'),
-      'processing': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Đang xử lý'),
-      'no_match': (const Color(0xFFB23B2E), const Color(0xFFF7DDD8), 'Chưa ghép'),
+      'processing': (
+        const Color(0xFF8A6D1A),
+        const Color(0xFFFBF1D2),
+        'Đang xử lý'
+      ),
+      'no_match': (
+        const Color(0xFFB23B2E),
+        const Color(0xFFF7DDD8),
+        'Chưa ghép'
+      ),
       'matched': (const Color(0xFF1F6B45), const Color(0xFFD7EFE0), 'Đã ghép'),
-      'confirmed': (const Color(0xFF1F5FA8), const Color(0xFFD6E6F7), 'Đã xác nhận'),
+      'confirmed': (
+        const Color(0xFF1F5FA8),
+        const Color(0xFFD6E6F7),
+        'Đã xác nhận'
+      ),
       'ongoing': (const Color(0xFF1F5FA8), const Color(0xFFD6E6F7), 'Đang đi'),
-      'completed': (const Color(0xFF555555), const Color(0xFFEAEAEA), 'Hoàn thành'),
+      'completed': (
+        const Color(0xFF555555),
+        const Color(0xFFEAEAEA),
+        'Hoàn thành'
+      ),
       'cancelled': (const Color(0xFFB23B2E), const Color(0xFFF1E2E0), 'Đã huỷ'),
       'expired': (const Color(0xFF555555), const Color(0xFFEAEAEA), 'Hết hạn'),
       'open': (const Color(0xFF1F6B45), const Color(0xFFD7EFE0), 'Đang mở'),
       'full': (const Color(0xFF8A6D1A), const Color(0xFFFBF1D2), 'Đã đầy'),
     };
-    final entry = map[status] ?? (const Color(0xFF555555), const Color(0xFFEAEAEA), status);
+    final entry = map[status] ??
+        (const Color(0xFF555555), const Color(0xFFEAEAEA), status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(color: entry.$2, borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+          color: entry.$2, borderRadius: BorderRadius.circular(20)),
       child: Text(entry.$3,
-          style: TextStyle(color: entry.$1, fontSize: 11, fontWeight: FontWeight.w600)),
+          style: TextStyle(
+              color: entry.$1, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -184,7 +215,22 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
   void initState() {
     super.initState();
     _state = widget.realtime.state;
-    widget.realtime.onConnectionChange(_onChange);
+    widget.realtime.addConnectionListener(_onChange);
+  }
+
+  @override
+  void didUpdateWidget(ConnectionBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.realtime == widget.realtime) return;
+    oldWidget.realtime.removeConnectionListener(_onChange);
+    _state = widget.realtime.state;
+    widget.realtime.addConnectionListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    widget.realtime.removeConnectionListener(_onChange);
+    super.dispose();
   }
 
   void _onChange(RealtimeState s) {
@@ -194,7 +240,8 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
   @override
   Widget build(BuildContext context) {
     if (_state == RealtimeState.connected) return const SizedBox.shrink();
-    final reconnecting = _state == RealtimeState.reconnecting || _state == RealtimeState.connecting;
+    final reconnecting = _state == RealtimeState.reconnecting ||
+        _state == RealtimeState.connecting;
     return Material(
       color: reconnecting ? const Color(0xFFFBF1D2) : const Color(0xFFF7DDD8),
       child: Padding(
@@ -204,16 +251,22 @@ class _ConnectionBannerState extends State<ConnectionBanner> {
             Icon(
               reconnecting ? Icons.sync_rounded : Icons.wifi_off_rounded,
               size: 16,
-              color: reconnecting ? const Color(0xFF8A6D1A) : const Color(0xFFB23B2E),
+              color: reconnecting
+                  ? const Color(0xFF8A6D1A)
+                  : const Color(0xFFB23B2E),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                reconnecting ? 'Đang kết nối lại…' : 'Mất kết nối thời gian thực',
+                reconnecting
+                    ? 'Đang kết nối lại…'
+                    : 'Mất kết nối thời gian thực',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: reconnecting ? const Color(0xFF8A6D1A) : const Color(0xFFB23B2E),
+                  color: reconnecting
+                      ? const Color(0xFF8A6D1A)
+                      : const Color(0xFFB23B2E),
                 ),
               ),
             ),

@@ -1,10 +1,19 @@
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { PG_POOL } from './database.constants';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  private readonly logger = new Logger(DatabaseService.name);
+  private readonly onPoolError = (error: Error) => {
+    // Idle pg clients emit on the Pool itself. Without a listener Node treats
+    // this as an uncaught EventEmitter error and terminates the API process.
+    this.logger.error(`PostgreSQL pool error: ${error.message}`, error.stack);
+  };
+
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {
+    this.pool.on('error', this.onPoolError);
+  }
 
   async query<T = any>(text: string, params: any[] = []): Promise<T[]> {
     const res = await this.pool.query(text, params);
@@ -34,5 +43,6 @@ export class DatabaseService implements OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.pool.end();
+    this.pool.off('error', this.onPoolError);
   }
 }

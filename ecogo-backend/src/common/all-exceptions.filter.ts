@@ -1,4 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
+import { STATUS_CODES } from 'node:http';
 
 /**
  * Consistent error envelope for HTTP. Unknown (non-Http) errors are logged with
@@ -23,13 +24,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
+      error = STATUS_CODES[status] ?? 'HTTP Error';
       const body = exception.getResponse();
       if (typeof body === 'string') {
         message = body;
       } else {
         const b = body as Record<string, unknown>;
         message = b.message ?? body;
-        error = (b.error as string) ?? error;
+        if (typeof b.error === 'string') error = b.error;
       }
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
