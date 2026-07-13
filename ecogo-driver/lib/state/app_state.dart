@@ -11,8 +11,11 @@ class AppState extends ChangeNotifier {
   late final RidesService rides;
   late final BookingsService bookings;
   late final ChatService chat;
+  late final RatingsService ratings;
+  late final NotificationsService notifications;
   final RealtimeService realtime = RealtimeService(Config.wsBase);
   final LocationService location = LocationService();
+  String? _pendingPushToken;
 
   AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
     api = ApiClient(
@@ -26,6 +29,8 @@ class AppState extends ChangeNotifier {
     rides = RidesService(api);
     bookings = BookingsService(api);
     chat = ChatService(api);
+    ratings = RatingsService(api);
+    notifications = NotificationsService(api);
     final t = tokens.access;
     if (t != null) realtime.connect(t);
   }
@@ -51,7 +56,34 @@ class AppState extends ChangeNotifier {
     await auth.verifyOtp(phone, code);
     final t = tokens.access;
     if (t != null) realtime.connect(t);
+    await _flushPushToken();
     notifyListeners();
+  }
+
+  /// Called by the platform push layer once it has an FCM/APNs token. Stored
+  /// until the user is authenticated, then registered with the backend. Wire
+  /// this from firebase_messaging.getToken()/onTokenRefresh in main().
+  Future<void> setPushToken(String token, {String? platform}) async {
+    _pendingPushToken = token;
+    if (isLoggedIn) await _flushPushToken(platform: platform);
+  }
+
+  Future<void> _flushPushToken({String? platform}) async {
+    final tok = _pendingPushToken;
+    if (tok == null || !isLoggedIn) return;
+    try {
+      await notifications.registerToken(tok, platform: platform);
+      _pendingPushToken = null;
+    } catch (_) {
+      // Non-fatal: will retry on next login/app start.
+    }
+  }
+
+  /// Called when the app returns to the foreground: reconnect the socket if we
+  /// have a session but the socket was dropped while backgrounded.
+  void onResumed() {
+    final t = tokens.access;
+    if (t != null) realtime.reauth(t);
   }
 
   Future<void> logout() async {

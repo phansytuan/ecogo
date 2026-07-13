@@ -63,58 +63,62 @@ class _RateTripSheetState extends State<RateTripSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + bottomInset),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            widget.driverName != null ? 'Đánh giá ${widget.driverName}' : 'Đánh giá tài xế',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text('Trải nghiệm chuyến đi của bạn thế nào?',
+    return PopScope(
+      canPop: !_busy,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              widget.driverName != null ? 'Đánh giá ${widget.driverName}' : 'Đánh giá tài xế',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 13)),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (i) {
-              final filled = i < _score;
-              return IconButton(
-                iconSize: 40,
-                tooltip: '${i + 1} sao',
-                onPressed: _busy ? null : () => setState(() => _score = i + 1),
-                icon: Icon(
-                  filled ? Icons.star_rounded : Icons.star_outline_rounded,
-                  color: filled ? const Color(0xFFF2B01E) : Colors.black26,
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _comment,
-            maxLines: 3,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Nhận xét (không bắt buộc)',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Gửi đánh giá'),
-          ),
-        ],
+            const SizedBox(height: 4),
+            Text('Trải nghiệm chuyến đi của bạn thế nào?',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 13)),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (i) {
+                final filled = i < _score;
+                return IconButton(
+                  iconSize: 40,
+                  tooltip: '${i + 1} sao',
+                  onPressed: _busy ? null : () => setState(() => _score = i + 1),
+                  icon: Icon(
+                    filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: filled ? const Color(0xFFF2B01E) : Colors.black26,
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _comment,
+              maxLines: 3,
+              enabled: !_busy,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Nhận xét (không bắt buộc)',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _busy ? null : _submit,
+              child: _busy
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Gửi đánh giá'),
+            ),
+          ],
+        ),
       ),
     );
   }

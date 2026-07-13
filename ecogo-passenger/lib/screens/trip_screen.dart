@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'chat_screen.dart';
@@ -12,6 +14,12 @@ class TripScreen extends StatefulWidget {
   final String rideId;
   final Stop pickup;
   final Stop dropoff;
+  final String? initialStatus;
+  final int? fare;
+  final String? driverName;
+  final String? driverPhone;
+  final double? driverRating;
+  final DateTime? departureTime;
 
   const TripScreen({
     super.key,
@@ -19,6 +27,12 @@ class TripScreen extends StatefulWidget {
     required this.rideId,
     required this.pickup,
     required this.dropoff,
+    this.initialStatus,
+    this.fare,
+    this.driverName,
+    this.driverPhone,
+    this.driverRating,
+    this.departureTime,
   });
 
   @override
@@ -29,8 +43,11 @@ class _TripScreenState extends State<TripScreen> {
   LatLng? _driver;
   RealtimeService? _rt;
   final _map = MapController();
-  String? _ended; // 'cancelled' | 'completed' once the ride ends
+  String? _ended;
   bool _cancelling = false;
+  bool _didFitBounds = false;
+  bool _mapReady = false;
+  bool _rated = false;
 
   bool get _hasCoords =>
       widget.pickup.lat != 0 || widget.pickup.lng != 0;
@@ -38,6 +55,11 @@ class _TripScreenState extends State<TripScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialStatus == 'completed') {
+      _ended = 'completed';
+    } else if (widget.initialStatus == 'cancelled') {
+      _ended = 'cancelled';
+    }
     final rt = context.read<AppState>().realtime;
     _rt = rt;
     rt.joinRide(widget.rideId);
@@ -47,10 +69,10 @@ class _TripScreenState extends State<TripScreen> {
       final lng = (d['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) return;
       setState(() => _driver = LatLng(lat, lng));
+      _fitBoundsIfNeeded();
     });
     rt.onRideEvent((event, d) {
       if (!mounted) return;
-      // Only react to events for THIS ride/booking.
       final evRide = d['rideId'] as String?;
       if (evRide != null && evRide != widget.rideId) return;
       if (event == 'ride.cancelled') {
@@ -58,15 +80,32 @@ class _TripScreenState extends State<TripScreen> {
       } else if (event == 'ride.completed') {
         setState(() => _ended = 'completed');
       } else if (event == 'booking.cancelled') {
-        // could be another passenger; only matters if it's ours (best-effort)
+        final evBooking = d['id'] as String?;
+        if (evBooking == widget.bookingId) {
+          setState(() => _ended = 'cancelled');
+        }
       }
     });
+  }
+
+  void _fitBoundsIfNeeded() {
+    if (_didFitBounds || !_hasCoords || !_mapReady) return;
+    final points = <LatLng>[
+      LatLng(widget.pickup.lat, widget.pickup.lng),
+      LatLng(widget.dropoff.lat, widget.dropoff.lng),
+      if (_driver != null) _driver!,
+    ];
+    if (points.length < 2) return;
+    _didFitBounds = true;
+    final bounds = LatLngBounds.fromPoints(points);
+    _map.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)));
   }
 
   @override
   void dispose() {
     _rt?.off('ride:location');
     _rt?.off('ride:events');
+    _rt?.leaveRide(widget.rideId);
     super.dispose();
   }
 
@@ -98,6 +137,23 @@ class _TripScreenState extends State<TripScreen> {
     }
   }
 
+  Future<void> _callDriver() async {
+    final phone = widget.driverPhone;
+    if (phone == null || phone.isEmpty) return;
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _openRateSheet() async {
+    final score = await RateTripSheet.show(context,
+        bookingId: widget.bookingId, driverName: widget.driverName);
+    if (score != null && mounted) {
+      setState(() => _rated = true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pickup = LatLng(widget.pickup.lat, widget.pickup.lng);
@@ -119,12 +175,21 @@ class _TripScreenState extends State<TripScreen> {
       ),
       body: Column(
         children: [
+          if (_rt != null) ConnectionBanner(realtime: _rt!),
           if (_ended != null) _endedBanner(),
+          _driverInfoCard(),
           Expanded(
             child: _hasCoords
                 ? FlutterMap(
                     mapController: _map,
-                    options: MapOptions(initialCenter: pickup, initialZoom: 9),
+                    options: MapOptions(
+                      initialCenter: pickup,
+                      initialZoom: 9,
+                      onMapReady: () {
+                        _mapReady = true;
+                        _fitBoundsIfNeeded();
+                      },
+                    ),
                     children: [
                       TileLayer(
                         urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -160,6 +225,84 @@ class _TripScreenState extends State<TripScreen> {
     );
   }
 
+  Widget _driverInfoCard() {
+    final name = widget.driverName;
+    final rating = widget.driverRating;
+    final fare = widget.fare;
+    final depTime = widget.departureTime;
+    final fmt = DateFormat('HH:mm · dd/MM');
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 20)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name ?? 'Tài xế',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    if (rating != null)
+                      Text('★ ${rating.toStringAsFixed(1)}',
+                          style: const TextStyle(color: Color(0xFFC98A2B), fontSize: 12)),
+                  ],
+                ),
+              ),
+              if (_ended == null) ...[
+                if (widget.driverPhone != null && widget.driverPhone!.isNotEmpty)
+                  IconButton.outlined(
+                    tooltip: 'Gọi tài xế',
+                    icon: const Icon(Icons.phone_outlined, size: 20),
+                    onPressed: _callDriver,
+                  ),
+                IconButton.outlined(
+                  tooltip: 'Nhắn tin',
+                  icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ChatScreen(bookingId: widget.bookingId)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (depTime != null || fare != null) ...[
+            const Divider(height: 14),
+            Row(
+              children: [
+                if (depTime != null) ...[
+                  Icon(Icons.play_circle_outline, size: 16, color: Colors.black.withValues(alpha: 0.4)),
+                  const SizedBox(width: 6),
+                  Text('Xuất phát ${fmt.format(depTime.toLocal())}',
+                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
+                ],
+                if (depTime != null && fare != null) const Spacer(),
+                if (fare != null) ...[
+                  Icon(Icons.payments, size: 16, color: Colors.black.withValues(alpha: 0.4)),
+                  const SizedBox(width: 6),
+                  Text(formatMoney(fare),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: ecogoGreen)),
+                ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _endedBanner() {
     final cancelled = _ended == 'cancelled';
     return Material(
@@ -181,9 +324,9 @@ class _TripScreenState extends State<TripScreen> {
                     fontWeight: FontWeight.w600),
               ),
             ),
-            if (!cancelled)
+            if (!cancelled && !_rated)
               TextButton(
-                onPressed: () => RateTripSheet.show(context, bookingId: widget.bookingId),
+                onPressed: _openRateSheet,
                 child: const Text('Đánh giá'),
               ),
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Đóng')),

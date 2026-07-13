@@ -19,11 +19,30 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _rides = context.read<AppState>().rides.mine();
   }
 
   void _load() {
-    setState(() => _rides = context.read<AppState>().rides.mine());
+    setState(() {
+      _rides = context.read<AppState>().rides.mine();
+    });
+  }
+
+  void _confirmLogout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Bạn sẽ cần nhập lại mã OTP để đăng nhập lại. Vị trí trực tiếp sẽ ngừng chia sẻ.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      context.read<AppState>().logout();
+    }
   }
 
   @override
@@ -44,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Đăng xuất',
             icon: const Icon(Icons.logout),
-            onPressed: () => context.read<AppState>().logout(),
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -112,17 +131,24 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 10),
                             Row(
                               children: [
-                                Icon(Icons.schedule, size: 15, color: Colors.black.withOpacity(0.45)),
+                                Icon(Icons.schedule, size: 15, color: Colors.black.withValues(alpha: 0.45)),
                                 const SizedBox(width: 6),
                                 Text(fmt.format(r.departureTime.toLocal()),
-                                    style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 13)),
+                                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
                                 const SizedBox(width: 16),
-                                Icon(Icons.event_seat, size: 15, color: Colors.black.withOpacity(0.45)),
+                                Icon(Icons.event_seat, size: 15, color: Colors.black.withValues(alpha: 0.45)),
                                 const SizedBox(width: 6),
                                 Text('${r.availableSeats}/${r.totalSeats} ghế',
-                                    style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 13)),
+                                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
+                                if (r.distanceM != null) ...[
+                                  const SizedBox(width: 16),
+                                  Icon(Icons.route, size: 15, color: Colors.black.withValues(alpha: 0.45)),
+                                  const SizedBox(width: 6),
+                                  Text('${(r.distanceM! / 1000).round()} km',
+                                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
+                                ],
                                 const Spacer(),
-                                Icon(Icons.chevron_right, color: Colors.black.withOpacity(0.3)),
+                                Icon(Icons.chevron_right, color: Colors.black.withValues(alpha: 0.3)),
                               ],
                             ),
                           ],

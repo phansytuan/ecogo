@@ -26,8 +26,25 @@ class _SearchScreenState extends State<SearchScreen> {
     );
     if (d == null || !mounted) return;
     final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_when));
-    if (t == null) return;
+    if (t == null || !mounted) return;
     setState(() => _when = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+  }
+
+  void _confirmLogout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Bạn sẽ cần nhập lại mã OTP để đăng nhập lại.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      context.read<AppState>().logout();
+    }
   }
 
   void _search() {
@@ -35,10 +52,11 @@ class _SearchScreenState extends State<SearchScreen> {
       showSnack(context, 'Điểm đi và điểm đến phải khác nhau', error: true);
       return;
     }
-    // Search a window around the desired departure: a little before (in case the
-    // driver leaves slightly early) through several hours after.
-    final start = _when.subtract(const Duration(hours: 1));
-    final end = _when.add(const Duration(hours: 6));
+    // Wide default window so a search around a chosen time still surfaces rides
+    // posted earlier that morning or later in the day (strict matching adds no
+    // padding of its own). Ranking still orders by time closeness.
+    final start = _when.subtract(const Duration(hours: 3));
+    final end = _when.add(const Duration(hours: 21));
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -70,55 +88,69 @@ class _SearchScreenState extends State<SearchScreen> {
           IconButton(
             tooltip: 'Đăng xuất',
             icon: const Icon(Icons.logout),
-            onPressed: () => context.read<AppState>().logout(),
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _stopDropdown('Điểm đón', _pickup, (s) => setState(() => _pickup = s)),
-            const SizedBox(height: 12),
-            _stopDropdown('Điểm trả', _dropoff, (s) => setState(() => _dropoff = s)),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Số ghế:'),
-                const SizedBox(width: 12),
-                DropdownButton<int>(
-                  value: _seats,
-                  items: [1, 2, 3, 4]
-                      .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
-                      .toList(),
-                  onChanged: (v) => setState(() => _seats = v ?? 1),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _stopDropdown('Điểm đón', _pickup, (s) => setState(() => _pickup = s)),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Đảo điểm đi / đến',
+                  icon: const Icon(Icons.swap_vert),
+                  onPressed: () => setState(() {
+                    final tmp = _pickup;
+                    _pickup = _dropoff;
+                    _dropoff = tmp;
+                  }),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              shape: RoundedRectangleBorder(
-                side: BorderSide(color: Colors.black.withOpacity(0.12)),
-                borderRadius: BorderRadius.circular(12),
               ),
-              leading: const Icon(Icons.schedule),
-              title: const Text('Thời gian đi'),
-              subtitle: Text(
-                '${_when.day.toString().padLeft(2, '0')}/${_when.month.toString().padLeft(2, '0')} '
-                '${_when.hour.toString().padLeft(2, '0')}:${_when.minute.toString().padLeft(2, '0')}',
+              _stopDropdown('Điểm trả', _dropoff, (s) => setState(() => _dropoff = s)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Số ghế:'),
+                  const SizedBox(width: 12),
+                  DropdownButton<int>(
+                    value: _seats,
+                    items: [1, 2, 3, 4]
+                        .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
+                        .toList(),
+                    onChanged: (v) => setState(() => _seats = v ?? 1),
+                  ),
+                ],
               ),
-              trailing: const Icon(Icons.edit_calendar),
-              onTap: _pickWhen,
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _search,
-              icon: const Icon(Icons.search),
-              label: const Text('Tìm chuyến'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                leading: const Icon(Icons.schedule),
+                title: const Text('Thời gian đi'),
+                subtitle: Text(
+                  '${_when.day.toString().padLeft(2, '0')}/${_when.month.toString().padLeft(2, '0')} '
+                  '${_when.hour.toString().padLeft(2, '0')}:${_when.minute.toString().padLeft(2, '0')}',
+                ),
+                trailing: const Icon(Icons.edit_calendar),
+                onTap: _pickWhen,
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _search,
+                icon: const Icon(Icons.search),
+                label: const Text('Tìm chuyến'),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
@@ -14,6 +15,7 @@ class BookingDetailsScreen extends StatefulWidget {
   final Stop dropoffStop;
   final int seats;
   final int? availableSeats;
+  final Candidate? candidate;
 
   const BookingDetailsScreen({
     super.key,
@@ -22,6 +24,7 @@ class BookingDetailsScreen extends StatefulWidget {
     required this.dropoffStop,
     required this.seats,
     this.availableSeats,
+    this.candidate,
   });
 
   @override
@@ -45,26 +48,24 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   final _pickupAddr = TextEditingController();
   final _dropoffAddr = TextEditingController();
   late int _seats;
-  List<_CompanionForm> _companions = [];
+  final List<_CompanionForm> _companions = [];
   Future<SeatMap>? _seatMap;
   final Set<String> _pickedSeats = {};
   bool _editingPickup = true;
   bool _busy = false;
+  final _map = MapController();
 
   @override
   void initState() {
     super.initState();
     _pickup = LatLng(widget.pickupStop.lat, widget.pickupStop.lng);
     _dropoff = LatLng(widget.dropoffStop.lat, widget.dropoffStop.lng);
-    // Never let the pre-selected seat count exceed what this ride actually has
-    // free — otherwise the seat dropdown has a value with no matching item.
     final maxSeats = widget.availableSeats ?? 4;
     _seats = widget.seats.clamp(1, maxSeats < 1 ? 1 : maxSeats);
     _syncCompanions();
     _seatMap = context.read<AppState>().rides.seatMap(widget.rideId);
   }
 
-  /// Keep exactly seats-1 companion forms — the account holder is passenger #1.
   void _syncCompanions() {
     final need = requiredCompanions(_seats);
     while (_companions.length < need) {
@@ -88,7 +89,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   String? _validate() {
     for (var i = 0; i < _companions.length; i++) {
       final c = _companions[i];
-      final n = i + 2; // passenger number
+      final n = i + 2;
       if (c.name.text.trim().length < 2) return 'Khách $n: cần họ tên';
       final phone = c.phone.text.trim();
       if (!RegExp(r'^(0|\+84)\d{9,10}$').hasMatch(phone)) {
@@ -139,6 +140,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             rideId: widget.rideId,
             pickup: Stop(widget.pickupStop.label, _pickup.latitude, _pickup.longitude),
             dropoff: Stop(widget.dropoffStop.label, _dropoff.latitude, _dropoff.longitude),
+            initialStatus: b.status,
+            fare: b.fare,
+            driverName: widget.candidate?.driverName,
+            driverRating: widget.candidate?.driverRating,
+            departureTime: widget.candidate?.departureTime,
           ),
         ),
       );
@@ -157,7 +163,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         _pickedSeats.remove(seatId);
       } else {
         if (_pickedSeats.length >= _seats) {
-          // Replace the oldest pick so the selection never exceeds the count.
           _pickedSeats.remove(_pickedSeats.first);
         }
         _pickedSeats.add(seatId);
@@ -165,23 +170,88 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     });
   }
 
+  Widget _rideSummary() {
+    final c = widget.candidate;
+    if (c == null) return const SizedBox.shrink();
+    final fmt = DateFormat('HH:mm · dd/MM');
+    final pricePerSeat = c.pricePerSeat;
+    final estimatedFare = pricePerSeat != null ? pricePerSeat * _seats : null;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CircleAvatar(radius: 16, child: Icon(Icons.person, size: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(c.driverName ?? 'Tài xế',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              Text('★ ${c.driverRating.toStringAsFixed(1)}',
+                  style: const TextStyle(color: Color(0xFFC98A2B), fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const Divider(height: 14),
+          Row(
+            children: [
+              Icon(Icons.play_circle_outline, size: 16, color: Colors.black.withValues(alpha: 0.4)),
+              const SizedBox(width: 6),
+              Text('Xuất phát ${fmt.format(c.departureTime.toLocal())}',
+                  style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
+            ],
+          ),
+          if (pricePerSeat != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.payments, size: 16, color: Colors.black.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Text('${formatMoney(pricePerSeat)}/ghế × $_seats = ',
+                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
+                Text(estimatedFare != null ? formatMoney(estimatedFare) : '—',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: ecogoGreen)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('Giá cuối cùng tính theo quãng đường thực tế của bạn.',
+                style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _seatPicker() {
     return FutureBuilder<SeatMap>(
       future: _seatMap,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done || !snap.hasData) {
-          return const SizedBox.shrink();
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+          );
         }
+        if (!snap.hasData) return const SizedBox.shrink();
         final map = snap.data!;
         if (map.freeSeatIds.isEmpty) return const SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 14),
-            Text('Chọn ghế (không bắt buộc)', style: const TextStyle(fontWeight: FontWeight.w700)),
+            const Text('Chọn ghế (không bắt buộc)', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
             Text('Chọn đúng $_seats ghế, hoặc bỏ trống để hệ thống tự xếp.',
-                style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.55))),
+                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.55))),
             const SizedBox(height: 10),
             for (var i = 0; i < map.rows.length; i++)
               Padding(
@@ -220,7 +290,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             decoration: BoxDecoration(
                               color: bg,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.black.withOpacity(0.06)),
+                              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                             ),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -256,6 +326,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _rideSummary(),
           const Text('Chọn chính xác điểm đón và điểm trả trên bản đồ',
               style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
@@ -265,7 +336,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               ButtonSegment(value: false, label: Text('Điểm trả'), icon: Icon(Icons.flag)),
             ],
             selected: {_editingPickup},
-            onSelectionChanged: (v) => setState(() => _editingPickup = v.first),
+            onSelectionChanged: (v) {
+              setState(() => _editingPickup = v.first);
+              final target = v.first ? _pickup : _dropoff;
+              _map.move(target, 12);
+            },
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -273,6 +348,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: FlutterMap(
+                mapController: _map,
                 options: MapOptions(
                   initialCenter: _editingPickup ? _pickup : _dropoff,
                   initialZoom: 12,
@@ -312,7 +388,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             _editingPickup
                 ? 'Chạm bản đồ để đặt điểm đón · ${_pickup.latitude.toStringAsFixed(5)}, ${_pickup.longitude.toStringAsFixed(5)}'
                 : 'Chạm bản đồ để đặt điểm trả · ${_dropoff.latitude.toStringAsFixed(5)}, ${_dropoff.longitude.toStringAsFixed(5)}',
-            style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.55)),
+            style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.55)),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -341,7 +417,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             ),
             child: Text(
               'Ở vùng sâu vùng xa hoặc ngõ nhỏ, tài xế có thể hẹn bạn ra điểm gần nhất.',
-              style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.7)),
+              style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.7)),
             ),
           ),
           const SizedBox(height: 16),
@@ -370,7 +446,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text('Bắt buộc khi đặt từ 2 ghế trở lên.',
-                style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.55))),
+                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.55))),
             const SizedBox(height: 8),
             ...List.generate(_companions.length, (i) {
               final c = _companions[i];
