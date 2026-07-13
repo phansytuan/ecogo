@@ -8,7 +8,7 @@ import {
   releaseRequest,
 } from '../api/dispatch';
 import { createSocket } from '../realtime/socket';
-import { getToken } from '../auth/token';
+import { getToken, subscribeToken } from '../auth/token';
 import { useToast } from '../ui/toast';
 import { Candidate, DriverLocation, QueueItem, TripInfo } from '../api/types';
 
@@ -28,17 +28,23 @@ export function useDispatch() {
   const [trip, setTrip] = useState<TripInfo | null>(null);
 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshRequest = useRef(0);
+  const selectionRequest = useRef(0);
+  const [socketToken, setSocketToken] = useState<string | null>(getToken());
 
   const refresh = useCallback(async (silent = false) => {
+    const request = ++refreshRequest.current;
     if (!silent) setLoadingQueue(true);
     try {
       const q = await getQueue();
+      if (request != refreshRequest.current) return;
       setQueue(q);
       setQueueError(null);
     } catch (e) {
+      if (request != refreshRequest.current) return;
       setQueueError(e instanceof Error ? e.message : 'Lỗi tải hàng đợi');
     } finally {
-      setLoadingQueue(false);
+      if (request == refreshRequest.current) setLoadingQueue(false);
     }
   }, []);
 
@@ -51,6 +57,12 @@ export function useDispatch() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => subscribeToken(setSocketToken), []);
+
+  useEffect(() => () => {
+    if (debounce.current) clearTimeout(debounce.current);
+  }, []);
+
   // live-ticking clock so wait timers update every second
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -60,9 +72,12 @@ export function useDispatch() {
 
   // socket: connection status + live events
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    const s = createSocket(token);
+    // Let the initial API request refresh an expired access token before the
+    // socket handshake; otherwise the gateway rejects a credential that the
+    // HTTP client is already replacing.
+    if (!socketToken || loadingQueue) return;
+    setStatus('connecting');
+    const s = createSocket(socketToken);
     s.on('connect', () => setStatus('online'));
     s.on('disconnect', () => setStatus('offline'));
     s.on('connect_error', () => setStatus('offline'));
@@ -78,19 +93,23 @@ export function useDispatch() {
     return () => {
       s.disconnect();
     };
-  }, [debouncedRefresh]);
+  }, [debouncedRefresh, loadingQueue, socketToken]);
 
   const select = useCallback(
     async (id: string) => {
+      const request = ++selectionRequest.current;
       setSelectedId(id);
       setCandidates([]);
       setLoadingCandidates(true);
       try {
-        setCandidates(await getCandidates(id));
+        const result = await getCandidates(id);
+        if (request == selectionRequest.current) setCandidates(result);
       } catch (e) {
-        toast('error', e instanceof Error ? e.message : 'Không tải được ứng viên');
+        if (request == selectionRequest.current) {
+          toast('error', e instanceof Error ? e.message : 'Không tải được ứng viên');
+        }
       } finally {
-        setLoadingCandidates(false);
+        if (request == selectionRequest.current) setLoadingCandidates(false);
       }
     },
     [toast],
@@ -150,6 +169,7 @@ export function useDispatch() {
       const prev = queue;
       // optimistic: remove from queue + clear selection
       setQueue((q) => q.filter((item) => item.id !== id));
+      selectionRequest.current++;
       setSelectedId(null);
       setCandidates([]);
       try {

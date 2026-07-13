@@ -26,7 +26,7 @@ export class FcmNotificationService implements NotificationProvider {
         key: privateKey,
         scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
       });
-    } else {
+    } else if (process.env.NOTIFICATION_PROVIDER === 'fcm') {
       this.logger.warn('FCM service account not configured; pushes will be dropped');
     }
   }

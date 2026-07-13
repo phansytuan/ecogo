@@ -14,7 +14,7 @@ class RealtimeService {
   void Function(Map<String, dynamic>)? _onRideLocation;
   void Function(Map<String, dynamic>)? _onChatMessage;
   void Function(String event, Map<String, dynamic>)? _onRideEvent;
-  void Function(RealtimeState)? _onConnectionChange;
+  final Set<void Function(RealtimeState)> _connectionListeners = {};
 
   RealtimeState _state = RealtimeState.disconnected;
 
@@ -34,13 +34,17 @@ class RealtimeService {
   void _setState(RealtimeState s) {
     if (s == _state) return;
     _state = s;
-    _onConnectionChange?.call(s);
+    for (final listener in List.of(_connectionListeners)) {
+      listener(s);
+    }
   }
 
   /// Subscribe to connection-state changes (connecting → connected → reconnecting…).
-  void onConnectionChange(void Function(RealtimeState) cb) {
-    _onConnectionChange = cb;
-  }
+  void addConnectionListener(void Function(RealtimeState) cb) =>
+      _connectionListeners.add(cb);
+
+  void removeConnectionListener(void Function(RealtimeState) cb) =>
+      _connectionListeners.remove(cb);
 
   void connect(String token) {
     _token = token;
@@ -74,11 +78,13 @@ class RealtimeService {
   void _bindListeners() {
     final onLoc = _onRideLocation;
     if (onLoc != null) {
-      _socket?.on('ride:location', (d) => onLoc(Map<String, dynamic>.from(d as Map)));
+      _socket?.on(
+          'ride:location', (d) => onLoc(Map<String, dynamic>.from(d as Map)));
     }
     final onMsg = _onChatMessage;
     if (onMsg != null) {
-      _socket?.on('chat:message', (d) => onMsg(Map<String, dynamic>.from(d as Map)));
+      _socket?.on(
+          'chat:message', (d) => onMsg(Map<String, dynamic>.from(d as Map)));
     }
     final onRide = _onRideEvent;
     if (onRide != null) {
@@ -101,6 +107,7 @@ class RealtimeService {
 
   void leaveRide(String rideId) {
     _rideRooms.remove(rideId);
+    _socket?.emit('ride:leave', {'rideId': rideId});
   }
 
   void joinChat(String bookingId) {
@@ -110,14 +117,16 @@ class RealtimeService {
 
   void leaveChat(String bookingId) {
     _chatRooms.remove(bookingId);
+    _socket?.emit('chat:leave', {'bookingId': bookingId});
   }
 
-  void emitDriverLocation(String rideId, double lat, double lng) =>
-      _socket?.emit('driver:location', {'rideId': rideId, 'lat': lat, 'lng': lng});
+  void emitDriverLocation(String rideId, double lat, double lng) => _socket
+      ?.emit('driver:location', {'rideId': rideId, 'lat': lat, 'lng': lng});
 
   void onRideLocation(void Function(Map<String, dynamic>) cb) {
     _onRideLocation = cb;
-    _socket?.on('ride:location', (d) => cb(Map<String, dynamic>.from(d as Map)));
+    _socket?.on(
+        'ride:location', (d) => cb(Map<String, dynamic>.from(d as Map)));
   }
 
   void onChatMessage(void Function(Map<String, dynamic>) cb) {
@@ -164,7 +173,7 @@ class RealtimeService {
 
   void dispose() {
     leaveRooms();
-    _onConnectionChange = null;
     disposeSocket();
+    _connectionListeners.clear();
   }
 }
