@@ -42,6 +42,12 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_started }
     ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
 
 volumes:
   ecogo_pgdata:

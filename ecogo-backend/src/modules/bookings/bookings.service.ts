@@ -220,7 +220,7 @@ export class BookingsService {
         `SELECT b.id, b.ride_id, b.passenger_id, b.status, b.fp, b.fd, b.seats,
                 r.driver_id, r.total_seats
          FROM bookings b LEFT JOIN rides r ON r.id = b.ride_id
-         WHERE b.id = $1 FOR UPDATE`,
+         WHERE b.id = $1 FOR UPDATE OF b`,
         [bookingId],
       );
       const row = res.rows[0];
