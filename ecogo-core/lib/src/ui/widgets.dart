@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/realtime_service.dart';
 
 /// Fades + slides a child in, optionally after a delay (for staggered lists).
 class FadeInSlide extends StatefulWidget {
@@ -58,7 +59,7 @@ class LoadingView extends StatelessWidget {
           const CircularProgressIndicator(strokeWidth: 2.6),
           if (label != null) ...[
             const SizedBox(height: 14),
-            Text(label!, style: TextStyle(color: Colors.black.withOpacity(0.55))),
+            Text(label!, style: TextStyle(color: Colors.black.withValues(alpha: 0.55))),
           ],
         ],
       ),
@@ -79,11 +80,11 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 46, color: Colors.black.withOpacity(0.22)),
+            Icon(icon, size: 46, color: Colors.black.withValues(alpha: 0.22)),
             const SizedBox(height: 14),
             Text(message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 14)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 14)),
             if (action != null) ...[const SizedBox(height: 18), action!],
           ],
         ),
@@ -163,4 +164,74 @@ class StatusChip extends StatelessWidget {
           style: TextStyle(color: entry.$1, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
+}
+
+/// A slim banner shown at the top of a screen when the realtime socket is
+/// disconnected or reconnecting. Returns [SizedBox.shrink] when connected, so
+/// it is safe to always include in a Column.
+class ConnectionBanner extends StatefulWidget {
+  final RealtimeService realtime;
+  const ConnectionBanner({super.key, required this.realtime});
+
+  @override
+  State<ConnectionBanner> createState() => _ConnectionBannerState();
+}
+
+class _ConnectionBannerState extends State<ConnectionBanner> {
+  RealtimeState _state = RealtimeState.disconnected;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = widget.realtime.state;
+    widget.realtime.onConnectionChange(_onChange);
+  }
+
+  void _onChange(RealtimeState s) {
+    if (mounted) setState(() => _state = s);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_state == RealtimeState.connected) return const SizedBox.shrink();
+    final reconnecting = _state == RealtimeState.reconnecting || _state == RealtimeState.connecting;
+    return Material(
+      color: reconnecting ? const Color(0xFFFBF1D2) : const Color(0xFFF7DDD8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              reconnecting ? Icons.sync_rounded : Icons.wifi_off_rounded,
+              size: 16,
+              color: reconnecting ? const Color(0xFF8A6D1A) : const Color(0xFFB23B2E),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                reconnecting ? 'Đang kết nối lại…' : 'Mất kết nối thời gian thực',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: reconnecting ? const Color(0xFF8A6D1A) : const Color(0xFFB23B2E),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Formats an integer amount as Vietnamese đồng with thousands separators.
+String formatMoney(int amount) {
+  var str = amount.abs().toString();
+  final parts = <String>[];
+  while (str.length > 3) {
+    parts.insert(0, str.substring(str.length - 3));
+    str = str.substring(0, str.length - 3);
+  }
+  parts.insert(0, str);
+  return '${amount < 0 ? '-' : ''}${parts.join('.')}\u{20AB}';
 }

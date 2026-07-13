@@ -97,7 +97,7 @@ class SeatMapView extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black.withOpacity(0.4))),
+                    color: Colors.black.withValues(alpha: 0.4))),
           ),
           Row(
             children: map.rows[i].map((c) {
@@ -118,7 +118,7 @@ class SeatMapView extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: _bg(c),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.black.withOpacity(0.06)),
+                        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,

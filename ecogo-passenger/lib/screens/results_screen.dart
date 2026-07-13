@@ -28,6 +28,7 @@ class ResultsScreen extends StatefulWidget {
 class _ResultsScreenState extends State<ResultsScreen> {
   late Future<List<Candidate>> _future;
   bool _requesting = false;
+  bool _navigating = false;
 
   @override
   void initState() {
@@ -47,9 +48,6 @@ class _ResultsScreenState extends State<ResultsScreen> {
     });
   }
 
-  /// Booking now goes through a details step: precise map points, and — for
-  /// multi-seat bookings — the additional passengers' details.
-  bool _navigating = false;
   Future<void> _openDetails(Candidate c) async {
     if (_navigating) return;
     _navigating = true;
@@ -62,6 +60,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
           dropoffStop: widget.dropoff,
           seats: widget.seats,
           availableSeats: c.availableSeats,
+          candidate: c,
         ),
       ),
     );
@@ -80,6 +79,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
           );
       if (!mounted) return;
       showSnack(context, 'Đã gửi yêu cầu — hệ thống sẽ ghép hoặc chuyển điều phối viên.');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showSnack(context, e.friendly, error: true);
     } catch (_) {
       if (!mounted) return;
       showSnack(context, 'Gửi yêu cầu thất bại', error: true);
@@ -88,10 +90,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
     }
   }
 
+  String _formatOffset(int m) => m >= 1000 ? '${(m / 1000).toStringAsFixed(1)} km' : '$m m';
+
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('HH:mm');
-    final money = NumberFormat.decimalPattern('vi');
+    final dateFmt = DateFormat('dd/MM');
     return Scaffold(
       appBar: AppBar(title: Text('${widget.pickup.label} → ${widget.dropoff.label}')),
       body: RefreshIndicator(
@@ -136,56 +140,65 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   key: ValueKey(c.rideId),
                   delay: staggerDelay(i),
                   child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 20)),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(c.driverName ?? 'Tài xế',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    Text('★ ${c.driverRating.toStringAsFixed(1)}',
-                                        style: const TextStyle(color: Color(0xFFC98A2B), fontSize: 12)),
-                                  ],
-                                ),
-                              ),
-                              if (i == 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFD7EFE0),
-                                    borderRadius: BorderRadius.circular(8),
+                    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _openDetails(c),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 20)),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(c.driverName ?? 'Tài xế',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      Text('★ ${c.driverRating.toStringAsFixed(1)}',
+                                          style: const TextStyle(color: Color(0xFFC98A2B), fontSize: 12)),
+                                    ],
                                   ),
-                                  child: const Text('PHÙ HỢP NHẤT',
-                                      style: TextStyle(
-                                          color: Color(0xFF1F6B45), fontSize: 10, fontWeight: FontWeight.w700)),
                                 ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _row(Icons.schedule, 'Đón khoảng', fmt.format(c.etaPickup.toLocal())),
-                          _row(Icons.alt_route, 'Lệch tuyến', '${c.totalOffsetM} m'),
-                          _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
-                          if (c.pricePerSeat != null)
-                            _row(Icons.payments, 'Giá mỗi ghế', '${money.format(c.pricePerSeat)}đ'),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                              onPressed: () => _openDetails(c),
-                              child: const Text('Đặt chỗ'),
+                                if (i == 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD7EFE0),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text('PHÙ HỢP NHẤT',
+                                        style: TextStyle(
+                                            color: Color(0xFF1F6B45), fontSize: 10, fontWeight: FontWeight.w700)),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const Divider(height: 16),
+                            _row(Icons.play_circle_outline, 'Xuất phát',
+                                '${dateFmt.format(c.departureTime.toLocal())} ${fmt.format(c.departureTime.toLocal())}'),
+                            _row(Icons.my_location, 'Đón bạn',
+                                '${fmt.format(c.etaPickup.toLocal())} (ước tính)'),
+                            _row(Icons.alt_route, 'Lệch tuyến', _formatOffset(c.totalOffsetM)),
+                            _row(Icons.route, 'Quãng đường chung', '${c.sharedKm.toStringAsFixed(1)} km'),
+                            _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
+                            if (c.pricePerSeat != null)
+                              _row(Icons.payments, 'Giá mỗi ghế', formatMoney(c.pricePerSeat!)),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: () => _openDetails(c),
+                                child: const Text('Đặt chỗ'),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -203,9 +216,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: Colors.black.withOpacity(0.4)),
+          Icon(icon, size: 16, color: Colors.black.withValues(alpha: 0.4)),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 13)),
+          Text(label, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 13)),
           const Spacer(),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         ],

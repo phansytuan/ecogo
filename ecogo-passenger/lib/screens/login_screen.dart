@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _codeStage = false;
   String? _devCode;
   bool _loading = false;
+  String? _lastPhone;
 
   @override
   void dispose() {
@@ -32,9 +33,29 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       final dev = await context.read<AppState>().requestOtp(phone);
+      _lastPhone = phone;
       if (mounted) setState(() { _devCode = dev; _codeStage = true; });
     } on ApiException catch (e) {
       if (mounted) showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (mounted) showSnack(context, 'Gửi mã OTP thất bại', error: true);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    final phone = _lastPhone ?? _phone.text.trim();
+    if (phone.isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final dev = await context.read<AppState>().requestOtp(phone);
+      if (mounted) setState(() { _devCode = dev; _code.clear(); });
+      if (mounted) showSnack(context, 'Đã gửi lại mã OTP');
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (mounted) showSnack(context, 'Gửi lại mã thất bại', error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -84,7 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 4),
                 Text('Đi chung, tiết kiệm, xanh hơn',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.black.withOpacity(0.5))),
+                    style: TextStyle(color: Colors.black.withValues(alpha: 0.5))),
                 const SizedBox(height: 32),
                 if (!_codeStage) ...[
                   TextField(
@@ -122,9 +143,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Text('Đăng nhập'),
                   ),
-                  TextButton(
-                    onPressed: _loading ? null : () => setState(() => _codeStage = false),
-                    child: const Text('Đổi số điện thoại'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: _loading ? null : () => setState(() => _codeStage = false),
+                        child: const Text('Đổi số điện thoại'),
+                      ),
+                      TextButton(
+                        onPressed: _loading ? null : _resendOtp,
+                        child: const Text('Gửi lại mã'),
+                      ),
+                    ],
                   ),
                 ],
               ],

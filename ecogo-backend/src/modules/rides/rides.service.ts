@@ -72,7 +72,8 @@ export class RidesService {
               departure_time, total_seats, available_seats, price_per_seat, distance_m)
            VALUES ($1,$2,$3,$4, ST_SetSRID(ST_GeomFromGeoJSON($5),4326), $6,$7,$8,$8,$9,$10)
            RETURNING id, driver_id, vehicle_id, origin_label, dest_label, duration_s,
-                     departure_time, total_seats, available_seats, price_per_seat, distance_m, status,
+                     departure_time, total_seats, available_seats,
+                     price_per_seat::float8 AS price_per_seat, distance_m, status,
                      ST_AsGeoJSON(route) AS route`,
           [
             driverId,
@@ -448,7 +449,8 @@ export class RidesService {
   findById(id: string) {
     return this.db.one(
       `SELECT id, driver_id, vehicle_id, origin_label, dest_label, duration_s,
-              departure_time, total_seats, available_seats, price_per_seat, distance_m, status,
+              departure_time, total_seats, available_seats,
+              price_per_seat::float8 AS price_per_seat, distance_m, status,
               ST_AsGeoJSON(route) AS route
        FROM rides WHERE id = $1`,
       [id],
@@ -458,7 +460,7 @@ export class RidesService {
   listByDriver(driverId: string) {
     return this.db.query(
       `SELECT id, origin_label, dest_label, departure_time, available_seats,
-              total_seats, price_per_seat, distance_m, charter_opt_out, status
+              total_seats, price_per_seat::float8 AS price_per_seat, distance_m, charter_opt_out, status
        FROM rides WHERE driver_id = $1 ORDER BY departure_time DESC`,
       [driverId],
     );

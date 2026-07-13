@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
+import 'vehicle_screen.dart';
 
 class PostRideScreen extends StatefulWidget {
   const PostRideScreen({super.key});
@@ -21,12 +22,32 @@ class _PostRideScreenState extends State<PostRideScreen> {
   RouteQuote? _quote;
   bool _quoting = false;
   bool _priceEdited = false;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
     _vehicles = context.read<AppState>().vehicles.mine();
     _fetchQuote();
+  }
+
+  @override
+  void dispose() {
+    _price.dispose();
+    super.dispose();
+  }
+
+  /// Seat options are capped by the selected vehicle's capacity.
+  List<int> get _seatOptions {
+    final max = _vehicle?.seats ?? 4;
+    return [1, 2, 3, 4, 6, 7, 9, 16].where((n) => n <= max).toList();
+  }
+
+  void _onVehicleChanged(Vehicle? v) {
+    setState(() {
+      _vehicle = v;
+      if (v != null && _seats > v.seats) _seats = v.seats;
+    });
   }
 
   Future<void> _fetchQuote() async {
@@ -49,7 +70,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
   Future<void> _pickDateTime() async {
     final d = await showDatePicker(
       context: context,
-      initialDate: _departure,
+      initialDate: _departure.isBefore(DateTime.now()) ? DateTime.now() : _departure,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 30)),
     );
@@ -80,6 +101,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Giờ khởi hành đã quá hạn — chọn lại', error: true);
       return;
     }
+    setState(() => _busy = true);
     try {
       await context.read<AppState>().rides.post(
             vehicleId: _vehicle!.id,
@@ -90,6 +112,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
             pricePerSeat: int.tryParse(_price.text.trim()),
           );
       if (!mounted) return;
+      showSnack(context, 'Đã đăng chuyến');
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -97,6 +120,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
     } catch (_) {
       if (!mounted) return;
       showSnack(context, 'Đăng chuyến thất bại', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -111,24 +136,45 @@ class _PostRideScreenState extends State<PostRideScreen> {
           if (snap.connectionState != ConnectionState.done) {
             return const LoadingView();
           }
+          if (snap.hasError) {
+            final msg = snap.error is ApiException
+                ? (snap.error as ApiException).friendly
+                : 'Không tải được danh sách xe';
+            return ErrorView(message: msg);
+          }
           final list = snap.data ?? [];
           if (list.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.directions_car_outlined,
               message: 'Bạn chưa đăng ký xe. Hãy đăng ký xe trước.',
+              action: FilledButton(
+                onPressed: () => Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const VehicleScreen()),
+                ).then((ok) {
+                  if (ok == true && mounted) {
+                    setState(() => _vehicles = context.read<AppState>().vehicles.mine());
+                  }
+                }),
+                child: const Text('Đăng ký xe'),
+              ),
             );
           }
           _vehicle ??= list.first;
+          final seats = _seatOptions;
+          if (!seats.contains(_seats)) {
+            _seats = seats.isEmpty ? 1 : seats.last;
+          }
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               DropdownButtonFormField<Vehicle>(
-                value: _vehicle,
+                initialValue: _vehicle,
                 decoration: const InputDecoration(labelText: 'Xe'),
                 items: list
                     .map((v) => DropdownMenuItem(value: v, child: Text('${v.plate} · ${v.seats} ghế')))
                     .toList(),
-                onChanged: (v) => setState(() => _vehicle = v),
+                onChanged: _onVehicleChanged,
               ),
               const SizedBox(height: 12),
               _stop('Điểm đi', _origin, (s) {
@@ -145,7 +191,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
               const SizedBox(height: 12),
               ListTile(
                 shape: RoundedRectangleBorder(
-                  side: BorderSide(color: Colors.black.withOpacity(0.12)),
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 title: const Text('Giờ khởi hành'),
@@ -160,10 +206,10 @@ class _PostRideScreenState extends State<PostRideScreen> {
                   const SizedBox(width: 12),
                   DropdownButton<int>(
                     value: _seats,
-                    items: [1, 2, 3, 4, 6, 9]
+                    items: seats
                         .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
                         .toList(),
-                    onChanged: (v) => setState(() => _seats = v ?? 4),
+                    onChanged: _busy ? null : (v) => setState(() => _seats = v ?? _seats),
                   ),
                 ],
               ),
@@ -180,7 +226,15 @@ class _PostRideScreenState extends State<PostRideScreen> {
               const SizedBox(height: 12),
               _note(),
               const SizedBox(height: 20),
-              FilledButton(onPressed: _post, child: const Text('Đăng chuyến')),
+              FilledButton(
+                onPressed: _busy ? null : _post,
+                child: _busy
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Đăng chuyến'),
+              ),
+              const SizedBox(height: 24),
             ],
           );
         },
@@ -239,7 +293,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
         Icon(icon, size: 18, color: const Color(0xFF8A6D1A)),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(text, style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.7))),
+          child: Text(text, style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.7))),
         ),
       ],
     );
@@ -253,7 +307,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
           value: value,
           isExpanded: true,
           items: kStops.map((s) => DropdownMenuItem(value: s, child: Text(s.label))).toList(),
-          onChanged: (s) => onChanged(s!),
+          onChanged: _busy ? null : (s) => onChanged(s!),
         ),
       ),
     );

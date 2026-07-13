@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'chat_screen.dart';
@@ -66,9 +67,16 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       if (mounted) showSnack(context, 'Cần quyền vị trí để chia sẻ GPS', error: true);
       return;
     }
-    _sub = app.location.positionStream().listen((pos) {
-      app.realtime.emitDriverLocation(widget.ride.id, pos.latitude, pos.longitude);
-    });
+    _sub = app.location.positionStream().listen(
+      (pos) {
+        app.realtime.emitDriverLocation(widget.ride.id, pos.latitude, pos.longitude);
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() => _sharing = false);
+        showSnack(context, 'Lỗi định vị — vị trí trực tiếp đã tắt', error: true);
+      },
+    );
     setState(() => _sharing = true);
     if (mounted) showSnack(context, 'Đang chia sẻ vị trí trực tiếp');
   }
@@ -85,6 +93,15 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       if (mounted) showSnack(context, 'Xác nhận thất bại', error: true);
     } finally {
       if (mounted) setState(() => _confirming.remove(b.id));
+    }
+  }
+
+  Future<void> _callPhone(String phone) async {
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (mounted) {
+      showSnack(context, 'Không thể gọi $phone', error: true);
     }
   }
 
@@ -152,6 +169,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   void dispose() {
     _sub?.cancel();
     _rt?.off('ride:events');
+    _rt?.leaveRide(widget.ride.id);
     super.dispose();
   }
 
@@ -163,8 +181,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       body: RefreshIndicator(
         onRefresh: () async => _load(),
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 0),
           children: [
+            ConnectionBanner(realtime: context.read<AppState>().realtime),
             _gpsCard(),
             _seatMap(r),
             _charterCard(),
@@ -183,7 +202,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   Widget _sectionTitle(String t) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-        child: Text(t, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black.withOpacity(0.7))),
+        child: Text(t, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black.withValues(alpha: 0.7))),
       );
 
   Widget _actionBar() {
@@ -256,7 +275,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
           decoration: BoxDecoration(
             color: on ? const Color(0xFFFBF6EC) : Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.black.withOpacity(0.07)),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,7 +303,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                     ? 'Chưa có khách đặt ghế — xe được mở bao chuyến cùng tuyến.'
                     : 'Đã có khách. Bạn phải đón ${c.nextPickupLabel ?? 'khách'} '
                         'lúc ${fmt.format(c.nextPickupAt!.toLocal())}.',
-                style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.65)),
+                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.65)),
               ),
             ],
           ),
@@ -294,19 +313,24 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   }
 
   Widget _gpsCard() {
+    final rideActive = widget.ride.status == 'open' || widget.ride.status == 'full';
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       decoration: BoxDecoration(
         color: _sharing ? const Color(0xFFD7EFE0) : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.07)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
       ),
       child: SwitchListTile(
         value: _sharing,
-        onChanged: _toggleShare,
+        onChanged: rideActive ? _toggleShare : null,
         secondary: Icon(_sharing ? Icons.gps_fixed : Icons.gps_off, color: _sharing ? ecogoGreen : Colors.black45),
         title: const Text('Chia sẻ vị trí trực tiếp', style: TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(_sharing ? 'Khách và điều phối thấy bạn theo thời gian thực' : 'Đang tắt'),
+        subtitle: Text(!rideActive
+            ? 'Chuyến đã kết thúc'
+            : _sharing
+                ? 'Khách và điều phối thấy bạn theo thời gian thực'
+                : 'Đang tắt'),
       ),
     );
   }
@@ -318,7 +342,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.07)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
       ),
       child: FutureBuilder<SeatMap>(
         future: _seats,
@@ -340,15 +364,15 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                 children: [
                   Text('Sơ đồ ghế',
                       style: TextStyle(
-                          fontWeight: FontWeight.w600, color: Colors.black.withOpacity(0.75))),
+                          fontWeight: FontWeight.w600, color: Colors.black.withValues(alpha: 0.75))),
                   const Spacer(),
                   Text('${map.freeCount} ghế trống',
-                      style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.6))),
+                      style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.6))),
                 ],
               ),
               const SizedBox(height: 4),
               Text('Chạm ghế trống để giữ cho khách đặt trực tiếp; chạm ghế đã giữ để mở lại.',
-                  style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.5))),
+                  style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.5))),
               const SizedBox(height: 10),
               SeatMapView(map: map, onTapSeat: _busy ? null : (c) => _onTapSeat(c)),
             ],
@@ -406,7 +430,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
               child: Text(
                 '≈ ${route.distanceKm.toStringAsFixed(0)} km · ${mins ~/ 60}h${(mins % 60).toString().padLeft(2, '0')} '
                 '(cập nhật theo danh sách khách)',
-                style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.55)),
+                style: TextStyle(fontSize: 12, color: Colors.black.withValues(alpha: 0.55)),
               ),
             ),
             ...route.stops.map((s) {
@@ -419,7 +443,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                 ),
                 subtitle: s.passengerName != null ? Text(s.passengerName!) : null,
                 trailing: Text(fmt.format(s.eta.toLocal()),
-                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black.withOpacity(0.7))),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black.withValues(alpha: 0.7))),
               );
             }),
           ],
@@ -502,8 +526,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text('${b.pickupLabel ?? '—'} → ${b.dropoffLabel ?? '—'} · ${b.seats} ghế'
-                          '${b.fare != null ? ' · ${b.fare}đ' : ''}',
-                          style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 13)),
+                          '${b.fare != null ? ' · ${formatMoney(b.fare!)}' : ''}',
+                          style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
                       if (b.pickupAddress != null || b.dropoffAddress != null) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -511,7 +535,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                             if (b.pickupAddress != null) 'Đón: ${b.pickupAddress}',
                             if (b.dropoffAddress != null) 'Trả: ${b.dropoffAddress}',
                           ].join('  ·  '),
-                          style: TextStyle(color: Colors.black.withOpacity(0.5), fontSize: 12),
+                          style: TextStyle(color: Colors.black.withValues(alpha: 0.5), fontSize: 12),
                         ),
                       ],
                       if (b.companions.isNotEmpty) ...[
@@ -532,7 +556,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                                     padding: const EdgeInsets.symmetric(vertical: 2),
                                     child: Text('${c.fullName} · ${c.phone}',
                                         style: TextStyle(
-                                            fontSize: 12, color: Colors.black.withOpacity(0.7))),
+                                            fontSize: 12, color: Colors.black.withValues(alpha: 0.7))),
                                   )),
                             ],
                           ),
@@ -549,6 +573,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                                   : const Text('Xác nhận'),
                             ),
                           const Spacer(),
+                          if (b.passengerPhone != null)
+                            IconButton.outlined(
+                              tooltip: 'Gọi ${b.passengerPhone}',
+                              icon: const Icon(Icons.phone_outlined, size: 20),
+                              onPressed: () => _callPhone(b.passengerPhone!),
+                            ),
                           OutlinedButton.icon(
                             onPressed: () => Navigator.push(
                               context,
