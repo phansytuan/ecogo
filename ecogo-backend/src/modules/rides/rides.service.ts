@@ -446,8 +446,8 @@ export class RidesService {
     };
   }
 
-  findById(id: string) {
-    return this.db.one(
+  async findById(id: string) {
+    const ride = await this.db.one(
       `SELECT id, driver_id, vehicle_id, origin_label, dest_label, duration_s,
               departure_time, total_seats, available_seats,
               price_per_seat::float8 AS price_per_seat, distance_m, status,
@@ -455,6 +455,8 @@ export class RidesService {
        FROM rides WHERE id = $1`,
       [id],
     );
+    if (!ride) throw new NotFoundException('Ride not found');
+    return ride;
   }
 
   listByDriver(driverId: string) {

@@ -5,6 +5,14 @@
 const BASE = process.env.BASE || 'http://localhost:3000/api';
 let passed = 0;
 
+// Keep every run isolated so the smoke test is repeatable against a persistent
+// local/staging database. Fixed users eventually collide with driver scheduling
+// rules and make an otherwise healthy stack fail on the second run.
+const runId = String(Date.now()).slice(-8);
+const driverPhone = '091' + runId.slice(-7);
+const passengerPhone = '092' + runId.slice(-7);
+const vehiclePlate = 'SMK-' + runId;
+
 function ok(cond, msg) {
   if (!cond) {
     console.error('\u2717 ' + msg);
@@ -84,9 +92,9 @@ async function main() {
   };
 
   console.log('--- Driver ---');
-  const drv = await login('0911000001');
+  const drv = await login(driverPhone);
   const veh = await call('POST', '/vehicles', drv.token, {
-    type: 'car_7', plate: '37A-123.45', seats: 6,
+    type: 'car_7', plate: vehiclePlate, seats: 6,
   });
   ok(veh.status < 300 && veh.json.id, 'register vehicle');
 
@@ -107,7 +115,7 @@ async function main() {
   const DROP = routePoint(ride.json.route, 0.6, 'dropoff');
 
   console.log('--- Passenger ---');
-  const pax = await login('0911000002');
+  const pax = await login(passengerPhone);
 
   const search = await call('POST', '/matching/search', pax.token, {
     pickup: PICK, dropoff: DROP, ...win,
