@@ -4,6 +4,11 @@
 # Local secrets / env overrides (e.g. GOONG_API_KEY) — never commit
 .env
 
+# Build artifacts
+**/build/
+**/.dart_tool/flutter_build/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db

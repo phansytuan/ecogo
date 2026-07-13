@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@n
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../../common/current-user.decorator';
 import { RidesService } from './rides.service';
-import { CharterCheckDto, CharterOptOutDto, CreateRideDto, QuoteDto } from './rides.dto';
+import { CharterCheckDto, CharterOptOutDto, CreateRideDto, QuoteDto, SeatLockDto } from './rides.dto';
 
 @Controller('rides')
 export class RidesController {
@@ -36,6 +36,32 @@ export class RidesController {
   @UseGuards(JwtAuthGuard)
   dynamicRoute(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.rides.dynamicRoute(id, user.id);
+  }
+
+  @Get(':id/seatmap')
+  @UseGuards(JwtAuthGuard)
+  seatMap(@Param('id', ParseUUIDPipe) id: string) {
+    return this.rides.seatMap(id);
+  }
+
+  @Post(':id/seats/lock')
+  @UseGuards(JwtAuthGuard)
+  lockSeats(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SeatLockDto,
+  ) {
+    return this.rides.lockSeats(id, user.id, dto.seatIds, dto.note);
+  }
+
+  @Post(':id/seats/unlock')
+  @UseGuards(JwtAuthGuard)
+  unlockSeats(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SeatLockDto,
+  ) {
+    return this.rides.unlockSeats(id, user.id, dto.seatIds);
   }
 
   @Get(':id/charter')

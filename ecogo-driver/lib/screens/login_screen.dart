@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,10 +21,8 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final dev = await context.read<AppState>().requestOtp(_phone.text.trim());
       if (mounted) setState(() { _devCode = dev; _codeStage = true; });
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.friendly);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Gửi mã thất bại');
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -35,10 +32,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       await context.read<AppState>().verifyOtp(_phone.text.trim(), _code.text.trim());
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.friendly);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Đăng nhập thất bại');
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }

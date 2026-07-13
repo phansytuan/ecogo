@@ -32,6 +32,17 @@ export class DispatchController {
     return this.dispatch.claim(id, user.id);
   }
 
+  @Post('requests/:id/release')
+  release(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.dispatch.release(id, user.id);
+  }
+
+  /** The exact trip the request was assigned to — same row the driver reads. */
+  @Get('requests/:id/trip')
+  trip(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dispatch.tripInfo(id);
+  }
+
   @Post('requests/:id/assign')
   assign(
     @Param('id', ParseUUIDPipe) id: string,

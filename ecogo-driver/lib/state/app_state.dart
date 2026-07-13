@@ -15,8 +15,12 @@ class AppState extends ChangeNotifier {
   final LocationService location = LocationService();
 
   AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
-    api = ApiClient(Config.apiBase, tokens,
-        onUnauthorized: _onUnauthorized, onTokenRefreshed: realtime.updateToken);
+    api = ApiClient(
+      Config.apiBase,
+      tokens,
+      onUnauthorized: _onUnauthorized,
+      onTokenRefreshed: _onTokenRefreshed,
+    );
     auth = AuthService(api, tokens);
     vehicles = VehiclesService(api);
     rides = RidesService(api);
@@ -27,8 +31,15 @@ class AppState extends ChangeNotifier {
   }
 
   void _onUnauthorized() {
+    realtime.leaveRooms();
     realtime.dispose();
     notifyListeners();
+  }
+
+  /// The access token was silently refreshed — re-auth the socket so live
+  /// tracking and chat keep working past token expiry.
+  void _onTokenRefreshed(String token) {
+    realtime.reauth(token);
   }
 
   bool get isLoggedIn => auth.isLoggedIn;
@@ -45,6 +56,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> logout() async {
     await auth.logout();
+    realtime.leaveRooms();
     realtime.dispose();
     notifyListeners();
   }

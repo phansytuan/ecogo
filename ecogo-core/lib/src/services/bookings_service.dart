@@ -1,4 +1,5 @@
 import '../models/booking.dart';
+import '../models/companion.dart';
 import '../models/stop.dart';
 import 'api_client.dart';
 
@@ -11,12 +12,22 @@ class BookingsService {
     required Stop pickup,
     required Stop dropoff,
     int seats = 1,
+    String? pickupAddress,
+    String? dropoffAddress,
+    List<Companion> companions = const [],
+    List<String> seatIds = const [],
   }) async {
     final r = await api.post('/bookings', {
       'rideId': rideId,
       'pickup': {'lat': pickup.lat, 'lng': pickup.lng, 'label': pickup.label},
       'dropoff': {'lat': dropoff.lat, 'lng': dropoff.lng, 'label': dropoff.label},
       'seats': seats,
+      if (pickupAddress != null && pickupAddress.trim().isNotEmpty)
+        'pickupAddress': pickupAddress.trim(),
+      if (dropoffAddress != null && dropoffAddress.trim().isNotEmpty)
+        'dropoffAddress': dropoffAddress.trim(),
+      if (companions.isNotEmpty) 'companions': companions.map((c) => c.toJson()).toList(),
+      if (seatIds.isNotEmpty) 'seatIds': seatIds,
     });
     return Booking.fromJson(r as Map<String, dynamic>);
   }

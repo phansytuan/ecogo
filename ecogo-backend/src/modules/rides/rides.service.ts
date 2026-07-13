@@ -22,6 +22,7 @@ import { earliestNextDeparture } from './scheduling';
 import { buildItinerary, etaOffsetsFromLegs } from './itinerary';
 import { canAcceptCharter, isCharterAvailable } from './charter';
 import { checkDeparture } from './departure';
+import { seatLayout } from './seat-layout';
 
 @Injectable()
 export class RidesService {
@@ -55,27 +56,176 @@ export class RidesService {
 
     await this.assertSchedulingGap(driverId, new Date(dto.departureTime), route.durationS, km);
 
-    return this.db.one(
-      `INSERT INTO rides
-         (driver_id, vehicle_id, origin_label, dest_label, route, duration_s,
-          departure_time, total_seats, available_seats, price_per_seat, distance_m)
-       VALUES ($1,$2,$3,$4, ST_SetSRID(ST_GeomFromGeoJSON($5),4326), $6,$7,$8,$8,$9,$10)
-       RETURNING id, driver_id, vehicle_id, origin_label, dest_label, duration_s,
-                 departure_time, total_seats, available_seats, price_per_seat, distance_m, status,
-                 ST_AsGeoJSON(route) AS route`,
-      [
-        driverId,
-        dto.vehicleId,
-        dto.origin.label ?? null,
-        dto.dest.label ?? null,
-        geojson,
-        route.durationS,
-        dto.departureTime,
-        dto.totalSeats,
-        pricePerSeat,
-        distanceM,
-      ],
+    // Seats become addressable positions from the vehicle's physical layout.
+    const layout = seatLayout(vehicle.type);
+    const sellable = layout.passengerSeatIds.length;
+    // The ride's sellable seat count is the layout's passenger count (never more
+    // than the vehicle physically has). A driver may still request fewer via
+    // totalSeats, in which case we cap.
+    const totalSeats = Math.min(dto.totalSeats ?? sellable, sellable);
+
+    return this.db.tx(async (client) => {
+      const ride = (
+        await client.query(
+          `INSERT INTO rides
+             (driver_id, vehicle_id, origin_label, dest_label, route, duration_s,
+              departure_time, total_seats, available_seats, price_per_seat, distance_m)
+           VALUES ($1,$2,$3,$4, ST_SetSRID(ST_GeomFromGeoJSON($5),4326), $6,$7,$8,$8,$9,$10)
+           RETURNING id, driver_id, vehicle_id, origin_label, dest_label, duration_s,
+                     departure_time, total_seats, available_seats, price_per_seat, distance_m, status,
+                     ST_AsGeoJSON(route) AS route`,
+          [
+            driverId,
+            dto.vehicleId,
+            dto.origin.label ?? null,
+            dto.dest.label ?? null,
+            geojson,
+            route.durationS,
+            dto.departureTime,
+            totalSeats,
+            pricePerSeat,
+            distanceM,
+          ],
+        )
+      ).rows[0];
+
+      // Seed the seat map. Only the first `totalSeats` passenger seats are
+      // offered; any beyond the requested count are omitted so they can't be sold.
+      const offered = layout.passengerSeatIds.slice(0, totalSeats);
+      const flat = layout.rows.flat().filter((c) => offered.includes(c.id));
+      for (const c of flat) {
+        await client.query(
+          `INSERT INTO ride_seats (ride_id, seat_id, row_num, col_num, status)
+           VALUES ($1,$2,$3,$4,'free')`,
+          [ride.id, c.id, c.row, c.col],
+        );
+      }
+      return ride;
+    });
+  }
+
+  /**
+   * The seat map for a ride: every seat position with its status
+   * (free / locked / booked). Drives the driver's visual seat map and the
+   * passenger's seat picker. Locked seats are the driver's offline reservations.
+   */
+  async seatMap(rideId: string) {
+    const ride = await this.db.one<{ vehicle_type: string }>(
+      `SELECT v.type AS vehicle_type
+       FROM rides r JOIN vehicles v ON v.id = r.vehicle_id
+       WHERE r.id = $1`,
+      [rideId],
     );
+    if (!ride) throw new NotFoundException('Ride not found');
+
+    const seats = await this.db.query<{
+      seat_id: string;
+      row_num: number;
+      col_num: number;
+      status: string;
+      booking_id: string | null;
+      note: string | null;
+    }>(
+      `SELECT seat_id, row_num, col_num, status, booking_id, note
+       FROM ride_seats WHERE ride_id = $1
+       ORDER BY row_num, col_num`,
+      [rideId],
+    );
+
+    const layout = seatLayout(ride.vehicle_type);
+    const byId = new Map(seats.map((s) => [s.seat_id, s]));
+    // Return the full physical layout (incl. the driver seat) annotated with
+    // sellable status, so the app can render the real vehicle shape.
+    const rows = layout.rows.map((row) =>
+      row.map((c) => {
+        const s = byId.get(c.id);
+        return {
+          seatId: c.id,
+          row: c.row,
+          col: c.col,
+          kind: c.kind,
+          // Driver seat and any non-offered seat are 'unavailable' for sale.
+          status: c.kind === 'driver' ? 'driver' : s ? s.status : 'unavailable',
+          note: s?.note ?? null,
+        };
+      }),
+    );
+    return {
+      rideId,
+      vehicleType: ride.vehicle_type,
+      rows,
+      freeSeatIds: seats.filter((s) => s.status === 'free').map((s) => s.seat_id),
+    };
+  }
+
+  /** Driver locks seats for passengers booking directly (offline). */
+  async lockSeats(rideId: string, driverId: string, seatIds: string[], note?: string) {
+    const owns = await this.db.one(
+      `SELECT 1 FROM rides WHERE id = $1 AND driver_id = $2`,
+      [rideId, driverId],
+    );
+    if (!owns) throw new ForbiddenException('Not your ride');
+
+    return this.db.tx(async (client) => {
+      const locked: string[] = [];
+      for (const seatId of seatIds) {
+        const r = await client.query(
+          `UPDATE ride_seats SET status = 'locked', note = $3, updated_at = now()
+           WHERE ride_id = $1 AND seat_id = $2 AND status = 'free'
+           RETURNING seat_id`,
+          [rideId, seatId, note ?? null],
+        );
+        if (r.rowCount === 0) {
+          throw new ConflictException(`Seat ${seatId} is not free`);
+        }
+        locked.push(seatId);
+      }
+      await this.recomputeAvailability(client, rideId);
+      const map = await this.seatMapTx(client, rideId);
+      this.realtime.emitToRide(rideId, 'seatmap.updated', { rideId });
+      return { locked, seatMap: map };
+    });
+  }
+
+  /** Driver frees previously locked seats. */
+  async unlockSeats(rideId: string, driverId: string, seatIds: string[]) {
+    const owns = await this.db.one(
+      `SELECT 1 FROM rides WHERE id = $1 AND driver_id = $2`,
+      [rideId, driverId],
+    );
+    if (!owns) throw new ForbiddenException('Not your ride');
+
+    return this.db.tx(async (client) => {
+      for (const seatId of seatIds) {
+        await client.query(
+          `UPDATE ride_seats SET status = 'free', note = NULL, updated_at = now()
+           WHERE ride_id = $1 AND seat_id = $2 AND status = 'locked'`,
+          [rideId, seatId],
+        );
+      }
+      await this.recomputeAvailability(client, rideId);
+      this.realtime.emitToRide(rideId, 'seatmap.updated', { rideId });
+      return this.seatMapTx(client, rideId);
+    });
+  }
+
+  /** available_seats = count of free seats (single source of truth). */
+  private async recomputeAvailability(client: import('pg').PoolClient, rideId: string) {
+    await client.query(
+      `UPDATE rides SET available_seats =
+         (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free')
+       WHERE id = $1`,
+      [rideId],
+    );
+  }
+
+  private async seatMapTx(client: import('pg').PoolClient, rideId: string) {
+    const seats = await client.query(
+      `SELECT seat_id, row_num, col_num, status FROM ride_seats
+       WHERE ride_id = $1 ORDER BY row_num, col_num`,
+      [rideId],
+    );
+    return seats.rows;
   }
 
   /** Enforce the minimum rest gap between a driver's consecutive trips. */
@@ -320,9 +470,19 @@ export class RidesService {
       driverId,
     ]);
     if (!owns) throw new ForbiddenException('Not your ride');
+    // The driver needs the precise map addresses and, for multi-seat bookings,
+    // every traveller they are expected to pick up.
     return this.db.query(
-      `SELECT b.id, b.passenger_id, u.full_name AS passenger_name,
-              b.pickup_label, b.dropoff_label, b.seats, b.fare, b.status
+      `SELECT b.id, b.passenger_id, u.full_name AS passenger_name, u.phone AS passenger_phone,
+              b.pickup_label, b.dropoff_label, b.pickup_address, b.dropoff_address,
+              b.seats, b.fare, b.status,
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                    'fullName', bp.full_name, 'phone', bp.phone, 'email', bp.email)
+                  ORDER BY bp.created_at)
+                 FROM booking_passengers bp WHERE bp.booking_id = b.id),
+                '[]'::json
+              ) AS companions
        FROM bookings b JOIN users u ON u.id = b.passenger_id
        WHERE b.ride_id = $1 ORDER BY b.created_at ASC`,
       [rideId],

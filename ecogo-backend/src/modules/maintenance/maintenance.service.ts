@@ -52,7 +52,7 @@ export class MaintenanceService {
 
     const cancelled = await this.db.query<{ id: string }>(
       `UPDATE bookings SET status = 'cancelled'
-       WHERE status IN ('pending','no_match')
+       WHERE status IN ('pending','no_match','processing')
          AND req_window_end < now() - make_interval(mins => $1)
        RETURNING id`,
       [reqGraceMin],

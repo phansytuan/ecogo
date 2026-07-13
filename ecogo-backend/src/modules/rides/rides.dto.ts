@@ -10,6 +10,9 @@ import {
   IsUUID,
   Min,
   ValidateNested,
+  IsArray,
+  ArrayMaxSize,
+  MaxLength,
 } from 'class-validator';
 
 export class GeoPointDto {
@@ -74,4 +77,16 @@ export class CharterCheckDto {
 export class CharterOptOutDto {
   @IsBoolean()
   optOut!: boolean;
+}
+
+export class SeatLockDto {
+  @IsArray()
+  @ArrayMaxSize(15)
+  @IsString({ each: true })
+  seatIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  note?: string;
 }

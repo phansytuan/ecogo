@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'chat_screen.dart';
+import '../widgets/seat_map_view.dart';
 
 class ActiveRideScreen extends StatefulWidget {
   final Ride ride;
@@ -15,62 +16,41 @@ class ActiveRideScreen extends StatefulWidget {
 }
 
 class _ActiveRideScreenState extends State<ActiveRideScreen> {
-  late final AppState _app;
-  late Ride _ride;
   late Future<List<RideBooking>> _bookings;
   late Future<DynamicRoute> _route;
   late Future<CharterStatus> _charter;
+  late Future<SeatMap> _seats;
   StreamSubscription<Position>? _sub;
   bool _sharing = false;
   bool _busy = false;
   final Set<String> _confirming = {};
 
+  RealtimeService? _rt;
+
   @override
   void initState() {
     super.initState();
-    _app = context.read<AppState>();
-    _ride = widget.ride;
-    // The driver must join the ride room to receive its lifecycle events
-    // (previously it only emitted location, so it heard nothing back).
-    _app.realtime.joinRide(widget.ride.id);
-    _app.realtime.on('booking.matched', (_) => _onLifecycle('Có khách mới ghép chuyến'));
-    _app.realtime.on('booking.cancelled', (_) => _onLifecycle('Một khách đã hủy chỗ'));
-    _app.realtime.on('ride.cancelled', (_) => _refreshRide());
-    _app.realtime.on('ride.completed', (_) => _refreshRide());
     _load();
-  }
-
-  /// A booking changed on this ride: refresh the passenger list / itinerary /
-  /// charter, and the ride itself (seat map + status).
-  void _onLifecycle(String message) {
-    if (!mounted) return;
-    showSnack(context, message);
-    _load();
-    _refreshRide();
-  }
-
-  Future<void> _refreshRide() async {
-    try {
-      final r = await _app.rides.get(widget.ride.id);
-      if (mounted) setState(() => _ride = r);
-    } catch (_) {
-      // best-effort; the lists still reflect the change
-    }
-  }
-
-  Future<void> _load() {
-    final rides = context.read<AppState>().rides;
-    final b = rides.bookings(widget.ride.id);
-    final r = rides.dynamicRoute(widget.ride.id);
-    final c = rides.charterStatus(widget.ride.id);
-    setState(() {
-      _bookings = b;
-      _route = r;
-      _charter = c;
+    final rt = context.read<AppState>().realtime;
+    _rt = rt;
+    rt.joinRide(widget.ride.id);
+    rt.onRideEvent((event, d) {
+      if (!mounted) return;
+      if (event == 'seatmap.updated') {
+        final rides = context.read<AppState>().rides;
+        setState(() => _seats = rides.seatMap(widget.ride.id));
+      }
     });
-    // Non-throwing so the pull-to-refresh spinner tracks the reload; each
-    // FutureBuilder surfaces its own error via ErrorView.
-    return Future.wait([b, r, c]).then((_) {}, onError: (_) {});
+  }
+
+  void _load() {
+    final rides = context.read<AppState>().rides;
+    setState(() {
+      _bookings = rides.bookings(widget.ride.id);
+      _route = rides.dynamicRoute(widget.ride.id);
+      _charter = rides.charterStatus(widget.ride.id);
+      _seats = rides.seatMap(widget.ride.id);
+    });
   }
 
   Future<void> _toggleShare(bool on) async {
@@ -171,21 +151,17 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   void dispose() {
     _sub?.cancel();
-    final rt = _app.realtime;
-    rt.off('booking.matched');
-    rt.off('booking.cancelled');
-    rt.off('ride.cancelled');
-    rt.off('ride.completed');
+    _rt?.off('ride:events');
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final r = _ride;
+    final r = widget.ride;
     return Scaffold(
       appBar: AppBar(title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}')),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () async => _load(),
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
@@ -211,12 +187,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       );
 
   Widget _actionBar() {
-    final active = _ride.status == 'open' || _ride.status == 'full';
+    final active = widget.ride.status == 'open' || widget.ride.status == 'full';
     if (!active) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Center(
-          child: StatusChip(_ride.status),
+          child: StatusChip(widget.ride.status),
         ),
       );
     }
@@ -336,7 +312,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   }
 
   Widget _seatMap(Ride r) {
-    final booked = (r.totalSeats - r.availableSeats).clamp(0, r.totalSeats);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       padding: const EdgeInsets.all(14),
@@ -345,37 +320,63 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.black.withOpacity(0.07)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      child: FutureBuilder<SeatMap>(
+        future: _seats,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Padding(padding: EdgeInsets.all(8), child: LoadingView());
+          }
+          if (snap.hasError || !snap.hasData) {
+            return Row(children: [
+              const Expanded(child: Text('Không tải được sơ đồ ghế')),
+              TextButton(onPressed: _load, child: const Text('Thử lại')),
+            ]);
+          }
+          final map = snap.data!;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Sơ đồ ghế', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black.withOpacity(0.75))),
-              const Spacer(),
-              Text('$booked/${r.totalSeats} đã đặt', style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.6))),
+              Row(
+                children: [
+                  Text('Sơ đồ ghế',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: Colors.black.withOpacity(0.75))),
+                  const Spacer(),
+                  Text('${map.freeCount} ghế trống',
+                      style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.6))),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('Chạm ghế trống để giữ cho khách đặt trực tiếp; chạm ghế đã giữ để mở lại.',
+                  style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.5))),
+              const SizedBox(height: 10),
+              SeatMapView(map: map, onTapSeat: _busy ? null : (c) => _onTapSeat(c)),
             ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: List.generate(r.totalSeats, (i) {
-              final taken = i < booked;
-              return Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: taken ? ecogoGreen : const Color(0xFFF0F2F0),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: taken ? ecogoGreen : Colors.black.withOpacity(0.12)),
-                ),
-                child: Icon(Icons.event_seat, size: 22, color: taken ? Colors.white : Colors.black38),
-              );
-            }),
-          ),
-        ],
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _onTapSeat(SeatCell c) async {
+    final rides = context.read<AppState>().rides;
+    setState(() => _busy = true);
+    try {
+      if (c.status == 'free') {
+        await rides.lockSeats(widget.ride.id, [c.seatId], note: 'Khách đặt trực tiếp');
+        if (mounted) showSnack(context, 'Đã giữ ghế ${c.seatId}');
+      } else if (c.status == 'locked') {
+        await rides.unlockSeats(widget.ride.id, [c.seatId]);
+        if (mounted) showSnack(context, 'Đã mở lại ghế ${c.seatId}');
+      }
+      if (mounted) setState(() => _seats = rides.seatMap(widget.ride.id));
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.friendly, error: true);
+    } catch (_) {
+      if (mounted) showSnack(context, 'Thao tác thất bại', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _itinerary() {
@@ -503,6 +504,40 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                       Text('${b.pickupLabel ?? '—'} → ${b.dropoffLabel ?? '—'} · ${b.seats} ghế'
                           '${b.fare != null ? ' · ${b.fare}đ' : ''}',
                           style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 13)),
+                      if (b.pickupAddress != null || b.dropoffAddress != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            if (b.pickupAddress != null) 'Đón: ${b.pickupAddress}',
+                            if (b.dropoffAddress != null) 'Trả: ${b.dropoffAddress}',
+                          ].join('  ·  '),
+                          style: TextStyle(color: Colors.black.withOpacity(0.5), fontSize: 12),
+                        ),
+                      ],
+                      if (b.companions.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F6F4),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Khách đi cùng (${b.companions.length})',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 4),
+                              ...b.companions.map((c) => Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    child: Text('${c.fullName} · ${c.phone}',
+                                        style: TextStyle(
+                                            fontSize: 12, color: Colors.black.withOpacity(0.7))),
+                                  )),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       Row(
                         children: [

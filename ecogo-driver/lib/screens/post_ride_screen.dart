@@ -21,7 +21,6 @@ class _PostRideScreenState extends State<PostRideScreen> {
   RouteQuote? _quote;
   bool _quoting = false;
   bool _priceEdited = false;
-  bool _posting = false;
 
   @override
   void initState() {
@@ -69,7 +68,6 @@ class _PostRideScreenState extends State<PostRideScreen> {
   }
 
   Future<void> _post() async {
-    if (_posting) return;
     if (_vehicle == null) {
       showSnack(context, 'Chọn xe trước', error: true);
       return;
@@ -82,7 +80,6 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Giờ khởi hành đã quá hạn — chọn lại', error: true);
       return;
     }
-    setState(() => _posting = true);
     try {
       await context.read<AppState>().rides.post(
             vehicleId: _vehicle!.id,
@@ -96,11 +93,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _posting = false);
       showSnack(context, e.friendly, error: true);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _posting = false);
       showSnack(context, 'Đăng chuyến thất bại', error: true);
     }
   }
@@ -185,12 +180,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
               const SizedBox(height: 12),
               _note(),
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _posting ? null : _post,
-                child: _posting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Đăng chuyến'),
-              ),
+              FilledButton(onPressed: _post, child: const Text('Đăng chuyến')),
             ],
           );
         },

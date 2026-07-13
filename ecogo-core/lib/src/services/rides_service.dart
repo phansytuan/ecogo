@@ -4,6 +4,7 @@ import '../models/route_quote.dart';
 import '../models/itin_stop.dart';
 import '../models/dynamic_route.dart';
 import '../models/charter_status.dart';
+import '../models/seat_map.dart';
 import '../models/stop.dart';
 import 'api_client.dart';
 
@@ -33,13 +34,6 @@ class RidesService {
   Future<List<Ride>> mine() async {
     final r = await api.get('/rides/mine');
     return (r as List).map((e) => Ride.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  /// A single ride's current state — used to refresh seat count / status after
-  /// a live ride-lifecycle event.
-  Future<Ride> get(String rideId) async {
-    final r = await api.get('/rides/$rideId');
-    return Ride.fromJson(r as Map<String, dynamic>);
   }
 
   Future<List<RideBooking>> bookings(String rideId) async {
@@ -97,6 +91,26 @@ class RidesService {
       'charterDurationS': charterDurationS,
     });
     return CharterFeasibility.fromJson(r as Map<String, dynamic>);
+  }
+
+  /// The seat map for a ride (positions + status). Powers the driver's visual
+  /// seat map and the passenger's seat picker.
+  Future<SeatMap> seatMap(String rideId) async {
+    final r = await api.get('/rides/$rideId/seatmap');
+    return SeatMap.fromJson(r as Map<String, dynamic>);
+  }
+
+  /// Driver locks seats for passengers booking directly (offline).
+  Future<void> lockSeats(String rideId, List<String> seatIds, {String? note}) async {
+    await api.post('/rides/$rideId/seats/lock', {
+      'seatIds': seatIds,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  /// Driver frees previously locked seats.
+  Future<void> unlockSeats(String rideId, List<String> seatIds) async {
+    await api.post('/rides/$rideId/seats/unlock', {'seatIds': seatIds});
   }
 
   Future<void> setCharterOptOut(String rideId, bool optOut) async {

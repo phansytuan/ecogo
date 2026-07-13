@@ -22,14 +22,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
   }
 
-  Future<void> _load() {
-    final f = context.read<AppState>().rides.mine();
-    // Block body: an arrow here would return the assigned Future, which
-    // setState() rejects ("callback argument returned a Future").
-    setState(() { _rides = f; });
-    // Non-throwing so the pull-to-refresh spinner tracks the reload; the
-    // FutureBuilder surfaces any error via ErrorView.
-    return f.then((_) {}, onError: (_) {});
+  void _load() {
+    setState(() => _rides = context.read<AppState>().rides.mine());
   }
 
   @override
@@ -66,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () async => _load(),
         child: FutureBuilder<List<Ride>>(
           future: _rides,
           builder: (context, snap) {

@@ -16,10 +16,22 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _devCode;
   bool _loading = false;
 
+  @override
+  void dispose() {
+    _phone.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
   Future<void> _send() async {
+    final phone = _phone.text.trim();
+    if (!RegExp(r'^(0|\+84)\d{9,10}$').hasMatch(phone)) {
+      showSnack(context, 'Số điện thoại không hợp lệ (VD: 0912345678)', error: true);
+      return;
+    }
     setState(() => _loading = true);
     try {
-      final dev = await context.read<AppState>().requestOtp(_phone.text.trim());
+      final dev = await context.read<AppState>().requestOtp(phone);
       if (mounted) setState(() { _devCode = dev; _codeStage = true; });
     } on ApiException catch (e) {
       if (mounted) showSnack(context, e.friendly, error: true);
@@ -29,9 +41,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _verify() async {
+    final code = _code.text.trim();
+    if (code.length != 6) {
+      showSnack(context, 'Mã OTP gồm 6 chữ số', error: true);
+      return;
+    }
     setState(() => _loading = true);
     try {
-      await context.read<AppState>().verifyOtp(_phone.text.trim(), _code.text.trim());
+      await context.read<AppState>().verifyOtp(_phone.text.trim(), code);
     } on ApiException catch (e) {
       if (mounted) showSnack(context, e.friendly, error: true);
     } catch (_) {

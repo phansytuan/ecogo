@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'token_store.dart';
@@ -7,25 +8,31 @@ class ApiException implements Exception {
   final String body;
   ApiException(this.status, this.body);
 
-  /// A short, user-friendly message for SnackBars.
-  String get friendly {
-    if (status == 0) return 'Không có kết nối mạng';
-    String? serverMsg;
+  String? get _message {
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['message'] != null) {
         final m = decoded['message'];
-        serverMsg = m is List ? m.join(', ') : m.toString();
+        return m is List ? m.join(', ') : m.toString();
       }
     } catch (_) {}
-    // A bare "Unauthorized" from the auth guard means the session token is no
-    // longer valid — show the friendly session-expired copy. But a 401 with a
-    // domain message (e.g. a wrong OTP on the login screen) should surface that
-    // message, exactly like every other status does.
-    if (status == 401 && (serverMsg == null || serverMsg == 'Unauthorized')) {
+    return null;
+  }
+
+  /// A short, user-friendly message for SnackBars.
+  String get friendly {
+    if (status == 401) {
+      final m = _message;
+      // Surface domain-specific 401 messages (e.g. OTP verification), but
+      // treat the generic "Unauthorized" as a session-expired prompt.
+      if (m != null && m != 'Unauthorized' && m.isNotEmpty) return m;
       return 'Phiên đăng nhập đã hết hạn';
     }
-    return serverMsg ?? 'Đã có lỗi xảy ra ($status)';
+    if (status == 0) return 'Không có kết nối mạng';
+    if (status == -1) return 'Kết nối quá lâu, vui lòng thử lại';
+    final m = _message;
+    if (m != null && m.isNotEmpty) return m;
+    return 'Đã có lỗi xảy ra ($status)';
   }
 
   @override
@@ -37,43 +44,45 @@ class ApiException implements Exception {
 class ApiClient {
   final String base;
   final TokenStore tokens;
+  final http.Client? httpClient;
   void Function()? onUnauthorized;
-
-  /// Called after a successful token refresh with the new access token, so
-  /// callers (e.g. the realtime socket) can re-authenticate with a fresh token
-  /// instead of clinging to the one they connected with.
-  void Function(String accessToken)? onTokenRefreshed;
-
-  /// In-flight refresh, shared by all concurrent callers so a burst of 401s
-  /// triggers exactly one refresh rather than a storm that revokes each other's
-  /// single-use refresh tokens.
-  Future<bool>? _refreshing;
-
-  /// Injectable so tests can supply a MockClient; defaults to a real client.
-  final http.Client _http;
+  /// Called after the access token is silently refreshed, so long-lived
+  /// connections (e.g. the socket) can re-auth with the new token.
+  void Function(String token)? onTokenRefreshed;
 
   ApiClient(this.base, this.tokens,
-      {this.onUnauthorized, this.onTokenRefreshed, http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+      {this.httpClient, this.onUnauthorized, this.onTokenRefreshed});
+
+  Future<bool>? _refreshFuture;
+  bool _unauthorizedNotified = false;
+
+  Future<void> _notifyUnauthorized() async {
+    if (_unauthorizedNotified) return;
+    _unauthorizedNotified = true;
+    await tokens.clear();
+    onUnauthorized?.call();
+  }
 
   Future<dynamic> get(String path) => _send('GET', path);
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) => _send('POST', path, body);
 
+  static const _timeout = Duration(seconds: 20);
+
   Future<dynamic> _send(String method, String path, [Map<String, dynamic>? body, bool retried = false]) async {
     late http.Response res;
     try {
-      res = await _raw(method, path, body);
+      res = await _raw(method, path, body).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(-1, 'timeout');
     } catch (e) {
       throw ApiException(0, e.toString());
     }
 
-    // Only try to refresh when we actually have a session (not on the login
-    // screen) and haven't already retried this request.
-    if (res.statusCode == 401 && tokens.access != null && !retried) {
-      if (await _refresh()) {
+    if (res.statusCode == 401 && tokens.access != null) {
+      if (!retried && await _refresh()) {
         return _send(method, path, body, true);
       }
-      // _refresh() already cleared the session and notified once on failure.
+      await _notifyUnauthorized();
       throw ApiException(401, res.body);
     }
     return _handle(res);
@@ -85,37 +94,43 @@ class ApiClient {
       'Content-Type': 'application/json',
       if (tokens.access != null) 'Authorization': 'Bearer ${tokens.access}',
     };
-    if (method == 'GET') return _http.get(uri, headers: headers);
-    return _http.post(uri, headers: headers, body: body == null ? null : jsonEncode(body));
-  }
-
-  /// Single-flight: concurrent callers await the same refresh future.
-  Future<bool> _refresh() {
-    return _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
-  }
-
-  Future<bool> _doRefresh() async {
-    final rt = tokens.refresh;
-    if (rt != null) {
-      try {
-        final res = await _http.post(
-          Uri.parse('$base/auth/refresh'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'refreshToken': rt}),
-        );
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final d = jsonDecode(res.body) as Map<String, dynamic>;
-          final access = d['accessToken'] as String;
-          await tokens.setSession(access, d['refreshToken'] as String);
-          onTokenRefreshed?.call(access);
-          return true;
-        }
-      } catch (_) {}
+    final client = httpClient;
+    if (method == 'GET') {
+      return client?.get(uri, headers: headers) ?? http.get(uri, headers: headers);
     }
-    // Refresh is impossible or was rejected: end the session once, here, so a
-    // burst of 401s doesn't fire onUnauthorized (and navigate to login) N times.
-    await tokens.clear();
-    onUnauthorized?.call();
+    return client?.post(uri, headers: headers, body: body == null ? null : jsonEncode(body)) ??
+        http.post(uri, headers: headers, body: body == null ? null : jsonEncode(body));
+  }
+
+  Future<bool> _refresh() async {
+    if (_refreshFuture != null) return _refreshFuture!;
+    _refreshFuture = _refreshOnce();
+    try {
+      return await _refreshFuture!;
+    } finally {
+      _refreshFuture = null;
+    }
+  }
+
+  Future<bool> _refreshOnce() async {
+    final rt = tokens.refresh;
+    if (rt == null) return false;
+    try {
+      final uri = Uri.parse('$base/auth/refresh');
+      final headers = {'Content-Type': 'application/json'};
+      final body = jsonEncode({'refreshToken': rt});
+      final res = await (httpClient?.post(uri, headers: headers, body: body) ??
+              http.post(uri, headers: headers, body: body))
+          .timeout(_timeout);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        final access = d['accessToken'] as String;
+        await tokens.setSession(access, d['refreshToken'] as String);
+        _unauthorizedNotified = false;
+        onTokenRefreshed?.call(access);
+        return true;
+      }
+    } catch (_) {}
     return false;
   }
 

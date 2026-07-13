@@ -4,11 +4,13 @@ import {
   claimRequest,
   getCandidates,
   getQueue,
+  getTrip,
+  releaseRequest,
 } from '../api/dispatch';
 import { createSocket } from '../realtime/socket';
 import { getToken } from '../auth/token';
 import { useToast } from '../ui/toast';
-import { Candidate, DriverLocation, QueueItem } from '../api/types';
+import { Candidate, DriverLocation, QueueItem, TripInfo } from '../api/types';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
 
@@ -23,6 +25,7 @@ export function useDispatch() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [trip, setTrip] = useState<TripInfo | null>(null);
 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -67,6 +70,8 @@ export function useDispatch() {
     s.on('request.pending', debouncedRefresh);
     s.on('request.no_match', debouncedRefresh);
     s.on('booking.matched', debouncedRefresh);
+    s.on('request.processing', debouncedRefresh);
+    s.on('request.released', debouncedRefresh);
     s.on('driver:location', (loc: DriverLocation) =>
       setDrivers((d) => ({ ...d, [loc.driverId]: loc })),
     );
@@ -96,7 +101,11 @@ export function useDispatch() {
       setBusyId(id);
       const prev = queue;
       // optimistic: mark claimed immediately
-      setQueue((q) => q.map((item) => (item.id === id ? { ...item, claimed_by: 'me' } : item)));
+      setQueue((q) =>
+        q.map((item) =>
+          item.id === id ? { ...item, claimed_by: 'me', status: 'processing' as const } : item,
+        ),
+      );
       try {
         await claimRequest(id);
         toast('success', 'Đã nhận yêu cầu xử lý');
@@ -104,6 +113,30 @@ export function useDispatch() {
       } catch (e) {
         setQueue(prev); // rollback
         toast('error', e instanceof Error ? e.message : 'Nhận xử lý thất bại');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [queue, refresh, toast],
+  );
+
+  /** Put a claimed request back on the board. */
+  const release = useCallback(
+    async (id: string) => {
+      setBusyId(id);
+      const prev = queue;
+      setQueue((q) =>
+        q.map((item) =>
+          item.id === id ? { ...item, claimed_by: null, status: 'pending' as const } : item,
+        ),
+      );
+      try {
+        await releaseRequest(id);
+        toast('success', 'Đã trả yêu cầu về hàng đợi');
+        refresh(true);
+      } catch (e) {
+        setQueue(prev);
+        toast('error', e instanceof Error ? e.message : 'Trả lại thất bại');
       } finally {
         setBusyId(null);
       }
@@ -122,6 +155,13 @@ export function useDispatch() {
       try {
         await assignRequest(id, rideId);
         toast('success', 'Đã gán tài xế cho khách');
+        // Read back the canonical trip the driver was given, so what dispatch
+        // shows is the same row, not a re-derived copy.
+        try {
+          setTrip(await getTrip(id));
+        } catch {
+          setTrip(null);
+        }
         refresh(true);
       } catch (e) {
         setQueue(prev); // rollback
@@ -135,8 +175,8 @@ export function useDispatch() {
 
   const selected = queue.find((q) => q.id === selectedId) ?? null;
   return {
-    queue, selected, selectedId, candidates, drivers, status,
+    queue, selected, selectedId, candidates, drivers, status, trip,
     loadingQueue, loadingCandidates, queueError, busyId,
-    select, claim, assign, refresh,
+    select, claim, assign, release, refresh, clearTrip: () => setTrip(null),
   };
 }
