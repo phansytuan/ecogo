@@ -21,7 +21,8 @@ export class TransactionsService {
     return this.db.tx(async (client) => {
       const b = (
         await client.query(
-          `SELECT b.id, b.passenger_id, b.fare, b.status, r.driver_id
+          `SELECT b.id, b.passenger_id, b.fare, b.status, r.driver_id,
+                  r.status AS ride_status
            FROM bookings b JOIN rides r ON r.id = b.ride_id
            WHERE b.id = $1 FOR UPDATE`,
           [bookingId],
@@ -29,8 +30,15 @@ export class TransactionsService {
       ).rows[0];
       if (!b) throw new NotFoundException('Booking or its ride not found');
       if (b.driver_id !== actorId) throw new ForbiddenException('Only the driver can complete');
-      if (!['matched', 'confirmed', 'ongoing'].includes(b.status)) {
-        throw new ConflictException('Booking is not completable');
+      if (b.ride_status !== 'completed' || b.status !== 'completed') {
+        throw new ConflictException('Complete the ride before recording payment');
+      }
+      const alreadySettled = await client.query(
+        `SELECT 1 FROM transactions WHERE booking_id = $1 LIMIT 1`,
+        [bookingId],
+      );
+      if (alreadySettled.rowCount) {
+        throw new ConflictException('Payment has already been recorded');
       }
 
       const gross = grossOverride ?? (b.fare != null ? Number(b.fare) : 0);
@@ -44,9 +52,6 @@ export class TransactionsService {
           [bookingId, gross, fee, net],
         )
       ).rows[0];
-
-      await client.query(`UPDATE bookings SET status = 'completed' WHERE id = $1`, [bookingId]);
-
       let affiliate = null;
       const ref = (
         await client.query(

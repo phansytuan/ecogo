@@ -9,9 +9,11 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { canFit, tightestFreeSeats } from '../matching/segment-capacity';
-import { quoteFare } from '../pricing/pricing';
+import { DetourService } from '../matching/detour.service';
+import { fareForDistanceM } from '../pricing/pricing';
 import { validateManifest } from './manifest';
-import { CreateBookingDto } from './bookings.dto';
+import { CreateBookingDto, QuoteBookingDto } from './bookings.dto';
+import { assertPassengerAvailable } from './passenger-availability';
 
 @Injectable()
 export class BookingsService {
@@ -19,7 +21,33 @@ export class BookingsService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeGateway,
     private readonly events: EventEmitter2,
+    private readonly detour: DetourService,
   ) {}
+
+  /**
+   * Fare quote for a pickup/dropoff pair, before any ride is chosen. Distance
+   * is the passenger's ROAD distance from the routing provider (never
+   * straight-line); fare = distance x bracket rate, integer VND.
+   */
+  async quote(dto: QuoteBookingDto) {
+    const seats = dto.seats ?? 1;
+    const route = await this.detour.passengerRoute(dto.pickup, dto.dropoff);
+    if (!route) {
+      throw new BadRequestException(
+        'Could not calculate a road route between these points — check the addresses and retry',
+      );
+    }
+    const f = fareForDistanceM(route.distanceM);
+    return {
+      routeDistanceM: f.distanceM,
+      routeDistanceKm: Math.round(f.distanceM / 100) / 10,
+      durationS: route.durationS,
+      ratePerKm: f.ratePerKm,
+      farePerSeat: f.farePerSeat,
+      seats,
+      totalFare: f.farePerSeat * seats,
+    };
+  }
 
   async create(passengerId: string, dto: CreateBookingDto) {
     const seats = dto.seats ?? 1;
@@ -29,60 +57,108 @@ export class BookingsService {
 
     const { pickup, dropoff } = dto;
 
-    return this.db.tx(async (client) => {
+    // Routing-provider work happens BEFORE the ride lock: the passenger's own
+    // road distance (fare basis — clients cannot supply a fare) and the
+    // driver-side detour revalidation. The transaction below re-checks that
+    // the ride's stop set is unchanged, so the metrics can't go stale.
+    const paxRoute = await this.detour.passengerRoute(pickup, dropoff);
+    if (!paxRoute) {
+      throw new BadRequestException(
+        'Could not calculate a road route between your pickup and dropoff',
+      );
+    }
+    const seatFare = fareForDistanceM(paxRoute.distanceM);
+
+    const evalRes = await this.detour.evaluateForRide(dto.rideId, pickup, dropoff);
+    if (!evalRes) throw new NotFoundException('Ride not found');
+    const { ctx, result: detourResult } = evalRes;
+    if (!detourResult.ok) {
+      throw new ConflictException(
+        `This ride cannot be routed with your stops (${detourResult.reason})`,
+      );
+    }
+    if (!detourResult.eligible) {
+      throw new ConflictException(
+        `Detour ${(detourResult.metrics.detourM / 1000).toFixed(1)} km exceeds the ` +
+          `${Math.round(detourResult.maxDetourRatio * 100)}% limit for this ride`,
+      );
+    }
+    const metrics = detourResult.metrics;
+
+    let driverId: string | undefined;
+    const result = await this.db.tx(async (client) => {
       // Lock the ride and compute fp/fd against its route in one go.
       const rideRes = await client.query(
-        `SELECT id, status, available_seats, total_seats, price_per_seat, distance_m,
+        `SELECT id, driver_id, status, available_seats, total_seats, price_per_seat, distance_m,
+                departure_time, duration_s,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($2,$3),4326)) AS fp,
                 ST_LineLocatePoint(route, ST_SetSRID(ST_MakePoint($4,$5),4326)) AS fd
          FROM rides WHERE id = $1 FOR UPDATE`,
         [dto.rideId, pickup.lng, pickup.lat, dropoff.lng, dropoff.lat],
       );
       const ride = rideRes.rows[0];
+      driverId = ride?.driver_id;
       if (!ride) throw new NotFoundException('Ride not found');
       if (ride.status !== 'open') throw new ConflictException('Ride is not open');
+      if (new Date(ride.departure_time) <= new Date()) {
+        throw new ConflictException('Ride has already departed');
+      }
       if (!(ride.fp < ride.fd)) {
         throw new BadRequestException('Pickup must be before dropoff along the route');
       }
 
       // Per-segment capacity: a seat is only occupied on the sub-interval [fp, fd).
-      const existing = (
+      const active = (
         await client.query(
-          `SELECT fp, fd, seats FROM bookings
-           WHERE ride_id = $1 AND status IN ('matched','confirmed')`,
+          `SELECT id, fp, fd, seats FROM bookings
+           WHERE ride_id = $1 AND status IN ('matched','confirmed','ongoing')`,
           [dto.rideId],
         )
-      ).rows.map((b: { fp: string; fd: string; seats: number }) => ({
+      ).rows as { id: string; fp: string; fd: string; seats: number }[];
+
+      // Detour revalidation: the metrics above were computed against this
+      // exact stop set. If a concurrent booking changed it, abort — the
+      // client retries and gets freshly routed metrics.
+      const activeIds = active.map((b) => b.id).sort();
+      if (JSON.stringify(activeIds) !== JSON.stringify(ctx.activeBookingIds)) {
+        throw new ConflictException('Ride stops changed while booking — please retry');
+      }
+
+      const existing = active.map((b) => ({
         fp: Number(b.fp),
         fd: Number(b.fd),
         seats: b.seats,
       }));
       const newSeg = { fp: Number(ride.fp), fd: Number(ride.fd), seats };
+      await assertPassengerAvailable(
+        client, passengerId, dto.rideId, ride.departure_time,
+        ride.duration_s, newSeg.fp, newSeg.fd,
+      );
       if (!canFit(existing, ride.total_seats, newSeg.fp, newSeg.fd, seats)) {
         throw new ConflictException('Not enough seats on this segment');
       }
 
-      // Fare = bracket price for the passenger's own segment distance x seats.
-      const segKm =
-        (Number(ride.fd) - Number(ride.fp)) *
-        (ride.distance_m != null ? Number(ride.distance_m) / 1000 : 0);
-      const fare =
-        ride.distance_m != null
-          ? quoteFare(segKm) * seats
-          : ride.price_per_seat != null
-            ? Number(ride.price_per_seat) * seats
-            : null;
+      // Fare = the passenger's own road distance x bracket rate x seats.
+      // All pricing inputs are snapshotted so future rate changes never
+      // retroactively change this booking.
+      const fare = seatFare.farePerSeat * seats;
 
       const bookingRes = await client.query(
         `INSERT INTO bookings
            (ride_id, passenger_id, pickup, dropoff, pickup_label, dropoff_label,
-            pickup_address, dropoff_address, fp, fd, seats, fare, status, matched_by)
+            pickup_address, dropoff_address, pickup_place_id, dropoff_place_id,
+            fp, fd, seats, fare, status, matched_by,
+            route_distance_m, fare_per_seat, fare_rate_per_km,
+            original_route_m, matched_route_m, detour_m, detour_pct,
+            pickup_insert_idx, dropoff_insert_idx, extra_duration_s)
          VALUES ($1,$2,
                  ST_SetSRID(ST_MakePoint($3,$4),4326),
                  ST_SetSRID(ST_MakePoint($5,$6),4326),
-                 $7,$8,$9,$10,$11,$12,$13,$14,'matched','auto')
+                 $7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'matched','auto',
+                 $17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
          RETURNING id, ride_id, passenger_id, fp, fd, seats, fare, status,
-                   pickup_address, dropoff_address, created_at`,
+                   pickup_address, dropoff_address, route_distance_m,
+                   fare_per_seat, detour_m, detour_pct, created_at`,
         [
           dto.rideId,
           passengerId,
@@ -94,10 +170,22 @@ export class BookingsService {
           dropoff.label ?? null,
           dto.pickupAddress ?? null,
           dto.dropoffAddress ?? null,
+          pickup.placeId ?? null,
+          dropoff.placeId ?? null,
           ride.fp,
           ride.fd,
           seats,
           fare,
+          seatFare.distanceM,
+          seatFare.farePerSeat,
+          seatFare.ratePerKm,
+          metrics.originalRemainingM,
+          metrics.matchedRouteM,
+          metrics.detourM,
+          metrics.detourPct,
+          metrics.pickupInsertIdx,
+          metrics.dropoffInsertIdx,
+          metrics.extraDurationS,
         ],
       );
       const booking = bookingRes.rows[0];
@@ -168,15 +256,23 @@ export class BookingsService {
           [dto.rideId, remaining],
         );
       }
-      this.realtime.emitToRide(dto.rideId, 'seatmap.updated', { rideId: dto.rideId });
-
       return { ...booking, companions };
     });
+    this.realtime.emitToRide(dto.rideId, 'seatmap.updated', { rideId: dto.rideId });
+    this.events.emit('booking.matched', {
+      bookingId: result.id,
+      rideId: dto.rideId,
+      passengerId,
+      driverId,
+      by: 'auto',
+    });
+    return result;
   }
 
   listForPassenger(passengerId: string) {
     return this.db.query(
       `SELECT b.id, b.ride_id, b.seats, b.fare, b.status,
+              b.route_distance_m, b.fare_per_seat,
               b.pickup_label, b.dropoff_label, b.pickup_address, b.dropoff_address,
               ST_Y(b.pickup) AS pickup_lat, ST_X(b.pickup) AS pickup_lng,
               ST_Y(b.dropoff) AS dropoff_lat, ST_X(b.dropoff) AS dropoff_lng,
@@ -242,13 +338,13 @@ export class BookingsService {
       };
 
       // A still-pending ride request: only the passenger withdraws it.
-      if (row.status === 'pending' || row.status === 'no_match') {
+      if (row.status === 'pending' || row.status === 'no_match' || row.status === 'processing') {
         if (!isPassenger) throw new ForbiddenException('Only the passenger can withdraw a request');
         await client.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [bookingId]);
         return base;
       }
 
-      if (row.status !== 'matched' && row.status !== 'confirmed') {
+      if (!['matched', 'confirmed', 'ongoing'].includes(row.status)) {
         throw new ConflictException('Booking cannot be cancelled in its current state');
       }
 
@@ -287,7 +383,7 @@ export class BookingsService {
       const remaining = (
         await client.query(
           `SELECT fp, fd, seats FROM bookings
-           WHERE ride_id = $1 AND status IN ('matched','confirmed')`,
+           WHERE ride_id = $1 AND status IN ('matched','confirmed','ongoing')`,
           [row.ride_id],
         )
       ).rows.map((b: { fp: string; fd: string; seats: number }) => ({

@@ -51,9 +51,35 @@ export interface TripInfo {
     companions: Companion[];
     seats: number;
     fare: number | null;
+    /** Passenger travel distance (fare basis). */
+    routeDistanceKm: number | null;
+    /** Driver detour (matching/eligibility basis). */
+    detourKm: number | null;
+    detourPct: number | null;
+    extraDurationS: number | null;
     pickupEta: string;
     dropoffEta: string;
   };
+}
+
+/** Driver-side detour metrics (road distances from the routing provider). */
+export interface CandidateDetour {
+  originalRemainingM: number;
+  matchedRouteM: number;
+  detourM: number;
+  detourPct: number;
+  pickupInsertIdx: number;
+  dropoffInsertIdx: number;
+  extraDurationS: number | null;
+}
+
+/** Passenger-side fare quote (their own route, never the detour). */
+export interface CandidateFare {
+  routeDistanceM: number;
+  farePerSeat: number;
+  ratePerKm: number;
+  seats: number;
+  totalFare: number;
 }
 
 export interface Candidate {
@@ -63,6 +89,7 @@ export interface Candidate {
   originLabel: string | null;
   destLabel: string | null;
   departureTime: string;
+  createdAt: string;
   etaPickup: string;
   availableSeats: number;
   pricePerSeat: number | null;
@@ -70,6 +97,11 @@ export interface Candidate {
   dropoffOffsetM: number;
   sharedKm: number;
   score: number;
+  eligible: boolean;
+  exclusionReason: string | null;
+  rankingReason: string | null;
+  detour: CandidateDetour | null;
+  fareQuote: CandidateFare | null;
 }
 
 export interface DriverLocation {

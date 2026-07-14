@@ -1,3 +1,32 @@
+import 'fare_quote.dart';
+
+/// Driver-side detour metrics for a candidate ride (road distances).
+class CandidateDetour {
+  final int originalRemainingM;
+  final int matchedRouteM;
+  final int detourM;
+  final double detourPct;
+  final int? extraDurationS;
+
+  const CandidateDetour({
+    required this.originalRemainingM,
+    required this.matchedRouteM,
+    required this.detourM,
+    required this.detourPct,
+    required this.extraDurationS,
+  });
+
+  double get detourKm => detourM / 1000;
+
+  factory CandidateDetour.fromJson(Map<String, dynamic> j) => CandidateDetour(
+        originalRemainingM: (j['originalRemainingM'] as num).toInt(),
+        matchedRouteM: (j['matchedRouteM'] as num).toInt(),
+        detourM: (j['detourM'] as num).toInt(),
+        detourPct: (j['detourPct'] as num).toDouble(),
+        extraDurationS: (j['extraDurationS'] as num?)?.toInt(),
+      );
+}
+
 class Candidate {
   final String rideId;
   final String? driverName;
@@ -11,6 +40,11 @@ class Candidate {
   final int pickupOffsetM;
   final int dropoffOffsetM;
   final double sharedKm;
+  final bool eligible;
+  final String? rankingReason;
+  final String? exclusionReason;
+  final CandidateDetour? detour;
+  final FareQuote? fareQuote;
 
   Candidate({
     required this.rideId,
@@ -25,6 +59,11 @@ class Candidate {
     required this.pickupOffsetM,
     required this.dropoffOffsetM,
     required this.sharedKm,
+    this.eligible = true,
+    this.rankingReason,
+    this.exclusionReason,
+    this.detour,
+    this.fareQuote,
   });
 
   int get totalOffsetM => pickupOffsetM + dropoffOffsetM;
@@ -42,5 +81,14 @@ class Candidate {
         pickupOffsetM: (j['pickupOffsetM'] as num).toInt(),
         dropoffOffsetM: (j['dropoffOffsetM'] as num).toInt(),
         sharedKm: (j['sharedKm'] as num).toDouble(),
+        eligible: j['eligible'] as bool? ?? true,
+        rankingReason: j['rankingReason'] as String?,
+        exclusionReason: j['exclusionReason'] as String?,
+        detour: j['detour'] == null
+            ? null
+            : CandidateDetour.fromJson(j['detour'] as Map<String, dynamic>),
+        fareQuote: j['fareQuote'] == null
+            ? null
+            : FareQuote.fromJson(j['fareQuote'] as Map<String, dynamic>),
       );
 }

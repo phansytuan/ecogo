@@ -33,6 +33,6 @@ import { GoongDirectionsService } from './directions/goong-directions.service';
       },
     },
   ],
-  exports: [RidesService],
+  exports: [RidesService, DIRECTIONS_PROVIDER],
 })
 export class RidesModule {}

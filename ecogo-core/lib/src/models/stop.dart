@@ -5,7 +5,9 @@ class Stop {
   final String label;
   final double lat;
   final double lng;
-  const Stop(this.label, this.lat, this.lng);
+  /// Geocoding-provider reference when this stop came from an address search.
+  final String? placeId;
+  const Stop(this.label, this.lat, this.lng, {this.placeId});
 
   // Value equality so the same logical stop is interchangeable across widgets
   // (e.g. a DropdownButton value that came from a different code path).

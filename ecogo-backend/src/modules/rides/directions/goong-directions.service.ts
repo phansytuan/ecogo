@@ -6,6 +6,11 @@ import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
 /**
  * Goong Directions. Returns an encoded polyline we decode into [lng,lat] pairs.
  * Docs: https://docs.goong.io/rest/direction/
+ *
+ * Goong's Direction endpoint has no reliable multi-stop support (a `waypoints`
+ * parameter is silently ignored), so multi-stop routes are built by chaining
+ * one Direction call per leg and concatenating the results. Leg count is
+ * bounded by the callers (itinerary size / detour-evaluation budget).
  */
 @Injectable()
 export class GoongDirectionsService implements DirectionsProvider {
@@ -14,26 +19,43 @@ export class GoongDirectionsService implements DirectionsProvider {
   constructor(private readonly config: ConfigService) {}
 
   async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
-    const key = this.config.get<string>('directions.goongApiKey');
-    const url = 'https://rsapi.goong.io/Direction';
-    const params: Record<string, string | undefined> = {
-      origin: `${origin.lat},${origin.lng}`,
-      destination: `${dest.lat},${dest.lng}`,
-      vehicle: 'car',
-      api_key: key,
-    };
-    // Goong takes intermediate stops as a semicolon-separated waypoints list.
-    if (waypoints.length > 0) {
-      params.waypoints = waypoints.map((w) => `${w.lat},${w.lng}`).join(';');
+    const points = [origin, ...waypoints, dest];
+    const coordinates: [number, number][] = [];
+    const legDurationsS: number[] = [];
+    for (let i = 1; i < points.length; i++) {
+      const leg = await this.leg(points[i - 1], points[i]);
+      // Drop the duplicated joint vertex between consecutive legs.
+      coordinates.push(...(coordinates.length > 0 ? leg.coordinates.slice(1) : leg.coordinates));
+      legDurationsS.push(leg.durationS);
     }
-    const { data } = await axios.get(url, { params });
+    return {
+      coordinates,
+      durationS: legDurationsS.reduce((a, b) => a + b, 0),
+      legDurationsS,
+    };
+  }
+
+  private async leg(
+    from: LatLng,
+    to: LatLng,
+  ): Promise<{ coordinates: [number, number][]; durationS: number }> {
+    const key = this.config.get<string>('directions.goongApiKey');
+    const { data } = await axios.get('https://rsapi.goong.io/Direction', {
+      params: {
+        origin: `${from.lat},${from.lng}`,
+        destination: `${to.lat},${to.lng}`,
+        vehicle: 'car',
+        api_key: key,
+      },
+      timeout: 10_000,
+    });
     const route = data?.routes?.[0];
     if (!route) throw new Error('Goong returned no route');
-    const coordinates = decodePolyline(route.overview_polyline.points);
     const legs: { duration?: { value?: number } }[] = route.legs ?? [];
-    const legDurationsS = legs.map((l) => l.duration?.value ?? 0);
-    const durationS = legDurationsS.reduce((a, b) => a + b, 0);
-    return { coordinates, durationS, legDurationsS };
+    return {
+      coordinates: decodePolyline(route.overview_polyline.points),
+      durationS: legs.reduce((a, l) => a + (l.duration?.value ?? 0), 0),
+    };
   }
 }
 

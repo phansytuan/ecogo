@@ -30,6 +30,9 @@ export class MatchingProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker.on('failed', (job, err) =>
       this.logger.error(`Job ${job?.id} failed: ${err.message}`),
     );
+    this.worker.on('error', (error) =>
+      this.logger.error(`Worker connection error: ${error.message}`),
+    );
   }
 
   async onModuleDestroy() {

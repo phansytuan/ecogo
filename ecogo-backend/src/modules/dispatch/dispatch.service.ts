@@ -106,6 +106,7 @@ export class DispatchService {
     const row = await this.db.one<any>(
       `SELECT b.id AS booking_id, b.status, b.seats, b.fare, b.fp, b.fd,
               b.pickup_label, b.dropoff_label, b.pickup_address, b.dropoff_address,
+              b.route_distance_m, b.detour_m, b.detour_pct, b.extra_duration_s,
               b.matched_by, b.dispatched_by,
               COALESCE(
                 (SELECT json_agg(json_build_object(
@@ -165,6 +166,12 @@ export class DispatchService {
         companions: row.companions ?? [],
         seats: row.seats,
         fare: row.fare == null ? null : Number(row.fare),
+        // Passenger travel distance (fare basis) vs driver detour (matching basis).
+        routeDistanceKm:
+          row.route_distance_m == null ? null : Number(row.route_distance_m) / 1000,
+        detourKm: row.detour_m == null ? null : Number(row.detour_m) / 1000,
+        detourPct: row.detour_pct == null ? null : Number(row.detour_pct),
+        extraDurationS: row.extra_duration_s == null ? null : Number(row.extra_duration_s),
         pickupEta: etaAt(row.fp),
         dropoffEta: etaAt(row.fd),
       },

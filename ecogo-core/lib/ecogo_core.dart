@@ -2,6 +2,8 @@ library ecogo_core;
 
 export 'src/config.dart';
 export 'src/models/stop.dart';
+export 'src/models/place.dart';
+export 'src/models/fare_quote.dart';
 export 'src/models/candidate.dart';
 export 'src/models/booking.dart';
 export 'src/models/ride.dart';
@@ -18,6 +20,7 @@ export 'src/services/token_store.dart';
 export 'src/services/api_client.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/matching_service.dart';
+export 'src/services/places_service.dart';
 export 'src/services/bookings_service.dart';
 export 'src/services/rides_service.dart';
 export 'src/services/vehicles_service.dart';

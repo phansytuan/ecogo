@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   settled      boolean NOT NULL DEFAULT false,
   created_at   timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_transactions_booking ON transactions(booking_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_booking ON transactions(booking_id);
 
 -- RATINGS
 CREATE TABLE IF NOT EXISTS ratings (

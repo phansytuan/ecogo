@@ -596,6 +596,26 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                               fontSize: 12),
                         ),
                       ],
+                      // Passenger distance (their fare basis) vs. YOUR extra
+                      // detour (matching basis) — deliberately separate.
+                      if (b.routeDistanceM != null || b.detourM != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            if (b.routeDistanceM != null)
+                              'Khách đi ${(b.routeDistanceM! / 1000).toStringAsFixed(1)} km',
+                            if (b.detourM != null)
+                              'Bạn đi vòng thêm ${(b.detourM! / 1000).toStringAsFixed(1)} km'
+                                  '${b.detourPct != null ? ' (${(b.detourPct! * 100).toStringAsFixed(0)}%)' : ''}',
+                            if (b.extraDurationS != null && b.extraDurationS! > 0)
+                              '+${(b.extraDurationS! / 60).round()} phút',
+                          ].join('  ·  '),
+                          style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
                       if (b.companions.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Container(

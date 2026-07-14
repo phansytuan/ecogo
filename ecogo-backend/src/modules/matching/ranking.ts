@@ -53,6 +53,7 @@ export function toRanked(row: MatchCandidateRow, score: number): RankedCandidate
     originLabel: row.origin_label,
     destLabel: row.dest_label,
     departureTime: row.departure_time,
+    createdAt: row.created_at,
     etaPickup: new Date(etaPickupMs(row)).toISOString(),
     availableSeats: row.available_seats,
     pricePerSeat: row.price_per_seat != null ? Number(row.price_per_seat) : null,
@@ -60,6 +61,12 @@ export function toRanked(row: MatchCandidateRow, score: number): RankedCandidate
     dropoffOffsetM: Math.round(row.dropoff_off_m),
     sharedKm: Math.round((row.shared_m / 1000) * 10) / 10,
     score: Math.round(score * 1000) / 1000,
+    // Detour evaluation (MatchingService) fills these in.
+    eligible: false,
+    exclusionReason: null,
+    rankingReason: null,
+    detour: null,
+    fareQuote: null,
   };
 }
 

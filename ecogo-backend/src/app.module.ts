@@ -23,6 +23,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { HealthModule } from './modules/health/health.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
+import { PlacesModule } from './modules/places/places.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { MaintenanceModule } from './modules/maintenance/maintenance.module';
     RatingsModule,
     HealthModule,
     MaintenanceModule,
+    PlacesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
