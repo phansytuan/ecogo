@@ -13,6 +13,14 @@ class RideBooking {
   final String status;
   final List<Companion> companions;
 
+  /// Passenger travel distance (fare basis) in meters, when snapshotted.
+  final int? routeDistanceM;
+
+  /// Driver detour caused by this booking (matching basis), meters / fraction.
+  final int? detourM;
+  final double? detourPct;
+  final int? extraDurationS;
+
   RideBooking({
     required this.id,
     required this.passengerName,
@@ -25,6 +33,10 @@ class RideBooking {
     this.pickupAddress,
     this.dropoffAddress,
     this.companions = const [],
+    this.routeDistanceM,
+    this.detourM,
+    this.detourPct,
+    this.extraDurationS,
   });
 
   factory RideBooking.fromJson(Map<String, dynamic> j) => RideBooking(
@@ -41,5 +53,9 @@ class RideBooking {
         companions: ((j['companions'] as List?) ?? [])
             .map((e) => Companion.fromJson(e as Map<String, dynamic>))
             .toList(),
+        routeDistanceM: (j['route_distance_m'] as num?)?.toInt(),
+        detourM: (j['detour_m'] as num?)?.toInt(),
+        detourPct: (j['detour_pct'] as num?)?.toDouble(),
+        extraDurationS: (j['extra_duration_s'] as num?)?.toInt(),
       );
 }

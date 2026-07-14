@@ -3,6 +3,7 @@ import {
   IsInt,
   IsISO8601,
   IsOptional,
+  IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -29,6 +30,25 @@ export class MatchRequestDto {
   @IsOptional()
   @IsISO8601()
   desiredPickup?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  seats?: number;
+}
+
+/** Preview one specific ride: detour metrics + fare before booking. */
+export class MatchPreviewDto {
+  @IsUUID()
+  rideId!: string;
+
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  pickup!: GeoPointDto;
+
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  dropoff!: GeoPointDto;
 
   @IsOptional()
   @IsInt()

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
+import 'address_picker_screen.dart';
 import 'results_screen.dart';
 import 'my_trips_screen.dart';
 
@@ -12,10 +13,15 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  Stop _pickup = kStops.first;
-  Stop _dropoff = kStops.last;
+  Stop? _pickup;
+  Stop? _dropoff;
   int _seats = 1;
   DateTime _when = DateTime.now();
+
+  // Fare preview for the selected pair (passenger road distance x rate).
+  FareQuote? _quote;
+  bool _quoting = false;
+  String? _quoteError;
 
   Future<void> _pickWhen() async {
     final d = await showDatePicker(
@@ -47,8 +53,66 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _pickAddress(bool isPickup) async {
+    final picked = await Navigator.push<Stop>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddressPickerScreen(
+          title: isPickup ? 'Chọn điểm đón' : 'Chọn điểm trả',
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (isPickup) {
+        _pickup = picked;
+      } else {
+        _dropoff = picked;
+      }
+    });
+    _refreshQuote();
+  }
+
+  Future<void> _refreshQuote() async {
+    final p = _pickup;
+    final d = _dropoff;
+    if (p == null || d == null) return;
+    setState(() {
+      _quoting = true;
+      _quoteError = null;
+      _quote = null;
+    });
+    try {
+      final q = await context.read<AppState>().bookings.quote(
+            pickup: p, dropoff: d, seats: _seats);
+      if (!mounted || p != _pickup || d != _dropoff) return;
+      setState(() {
+        _quote = q;
+        _quoting = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _quoting = false;
+        _quoteError = e.friendly;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _quoting = false;
+        _quoteError = 'Không tính được quãng đường, thử lại nhé';
+      });
+    }
+  }
+
   void _search() {
-    if (_pickup.label == _dropoff.label) {
+    final p = _pickup;
+    final d = _dropoff;
+    if (p == null || d == null) {
+      showSnack(context, 'Hãy chọn điểm đón và điểm trả trước', error: true);
+      return;
+    }
+    if (p.label == d.label || (p.lat == d.lat && p.lng == d.lng)) {
       showSnack(context, 'Điểm đi và điểm đến phải khác nhau', error: true);
       return;
     }
@@ -61,13 +125,97 @@ class _SearchScreenState extends State<SearchScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => ResultsScreen(
-          pickup: _pickup,
-          dropoff: _dropoff,
+          pickup: p,
+          dropoff: d,
           windowStart: start.isBefore(DateTime.now()) ? DateTime.now() : start,
           windowEnd: end,
           seats: _seats,
         ),
       ),
+    );
+  }
+
+  Widget _addressField({
+    required String label,
+    required IconData icon,
+    required Stop? value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          prefixIcon: Icon(icon),
+          suffixIcon: const Icon(Icons.chevron_right),
+        ),
+        child: Text(
+          value?.label ?? 'Chạm để nhập địa chỉ hoặc dùng GPS',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: value == null ? Colors.black.withValues(alpha: 0.45) : Colors.black,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quoteCard() {
+    if (_pickup == null || _dropoff == null) return const SizedBox.shrink();
+    Widget child;
+    if (_quoting) {
+      child = const Row(children: [
+        SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        SizedBox(width: 10),
+        Text('Đang tính quãng đường và giá…', style: TextStyle(fontSize: 13)),
+      ]);
+    } else if (_quoteError != null) {
+      child = Row(children: [
+        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(_quoteError!, style: const TextStyle(fontSize: 13))),
+        TextButton(onPressed: _refreshQuote, child: const Text('Thử lại')),
+      ]);
+    } else if (_quote != null) {
+      final q = _quote!;
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.route, size: 16, color: ecogoGreen),
+            const SizedBox(width: 8),
+            Text('Quãng đường của bạn: ${q.routeDistanceKm.toStringAsFixed(1)} km',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.payments, size: 16, color: ecogoGreen),
+            const SizedBox(width: 8),
+            Text(
+              'Giá ước tính: ${formatMoney(q.farePerSeat)}/ghế'
+              '${_seats > 1 ? ' × $_seats = ${formatMoney(q.totalFare)}' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: ecogoGreen),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text('Tính theo quãng đường thực tế bạn đi, không phụ thuộc đường vòng của tài xế.',
+              style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.5))),
+        ],
+      );
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F7F2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
     );
   }
 
@@ -98,20 +246,34 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _stopDropdown('Điểm đón', _pickup, (s) => setState(() => _pickup = s)),
+              _addressField(
+                label: 'Điểm đón',
+                icon: Icons.trip_origin,
+                value: _pickup,
+                onTap: () => _pickAddress(true),
+              ),
               Align(
                 alignment: Alignment.centerRight,
                 child: IconButton(
                   tooltip: 'Đảo điểm đi / đến',
                   icon: const Icon(Icons.swap_vert),
-                  onPressed: () => setState(() {
-                    final tmp = _pickup;
-                    _pickup = _dropoff;
-                    _dropoff = tmp;
-                  }),
+                  onPressed: () {
+                    setState(() {
+                      final tmp = _pickup;
+                      _pickup = _dropoff;
+                      _dropoff = tmp;
+                    });
+                    _refreshQuote();
+                  },
                 ),
               ),
-              _stopDropdown('Điểm trả', _dropoff, (s) => setState(() => _dropoff = s)),
+              _addressField(
+                label: 'Điểm trả',
+                icon: Icons.flag_outlined,
+                value: _dropoff,
+                onTap: () => _pickAddress(false),
+              ),
+              _quoteCard(),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -122,7 +284,10 @@ class _SearchScreenState extends State<SearchScreen> {
                     items: [1, 2, 3, 4]
                         .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
                         .toList(),
-                    onChanged: (v) => setState(() => _seats = v ?? 1),
+                    onChanged: (v) {
+                      setState(() => _seats = v ?? 1);
+                      _refreshQuote();
+                    },
                   ),
                 ],
               ),
@@ -151,22 +316,6 @@ class _SearchScreenState extends State<SearchScreen> {
               const SizedBox(height: 24),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _stopDropdown(String label, Stop value, ValueChanged<Stop> onChanged) {
-    return InputDecorator(
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<Stop>(
-          value: value,
-          isExpanded: true,
-          items: kStops
-              .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
-              .toList(),
-          onChanged: (s) => onChanged(s!),
         ),
       ),
     );

@@ -1,7 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MatchingService } from './matching.service';
-import { MatchRequestDto } from './matching.dto';
+import { MatchPreviewDto, MatchRequestDto } from './matching.dto';
 
 @Controller('matching')
 export class MatchingController {
@@ -12,5 +12,12 @@ export class MatchingController {
   @UseGuards(JwtAuthGuard)
   search(@Body() dto: MatchRequestDto) {
     return this.matching.search(dto, 'strict');
+  }
+
+  /** Detour + fare preview for one specific ride, before booking. */
+  @Post('preview')
+  @UseGuards(JwtAuthGuard)
+  preview(@Body() dto: MatchPreviewDto) {
+    return this.matching.preview(dto);
   }
 }

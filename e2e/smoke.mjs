@@ -102,7 +102,7 @@ async function main() {
     vehicleId: veh.json.id,
     origin: VINH,
     dest: HANOI,
-    departureTime: new Date(now + 3600e3).toISOString(),
+    departureTime: new Date(now + 5000).toISOString(),
     totalSeats: 6,
     pricePerSeat: 250000,
   });
@@ -117,16 +117,94 @@ async function main() {
   console.log('--- Passenger ---');
   const pax = await login(passengerPhone);
 
+  console.log('--- Detailed addresses (places proxy) ---');
+  const ac = await call(
+    'GET', '/places/autocomplete?input=' + encodeURIComponent('15 Võ Thị Sáu') +
+    '&lat=18.68&lng=105.68', pax.token,
+  );
+  ok(ac.status < 300 && Array.isArray(ac.json) && ac.json.length > 0, 'address autocomplete returns suggestions');
+  ok(!!ac.json[0].placeId && !!ac.json[0].description, 'suggestions carry placeId + formatted address');
+  const detail = await call(
+    'GET', '/places/detail?placeId=' + encodeURIComponent(ac.json[0].placeId), pax.token,
+  );
+  ok(detail.status < 300 && typeof detail.json.lat === 'number' && typeof detail.json.lng === 'number',
+    'place detail resolves to coordinates');
+  const rev = await call('GET', `/places/reverse?lat=${PICK.lat}&lng=${PICK.lng}`, pax.token);
+  ok(rev.status < 300 && !!rev.json.address, 'reverse geocoding returns an address for a GPS fix');
+
+  console.log('--- Passenger fare quote ---');
+  const quote = await call('POST', '/bookings/quote', pax.token, {
+    pickup: PICK, dropoff: DROP, seats: 2,
+  });
+  ok(quote.status < 300 && quote.json.routeDistanceM > 0, 'quote returns the passenger road distance');
+  ok(quote.json.farePerSeat > 0 && quote.json.farePerSeat % 1000 === 0,
+    'fare per seat is a whole 1,000đ amount');
+  ok(quote.json.totalFare === quote.json.farePerSeat * 2, 'total fare = per-seat fare x seats');
+  const expectedFare =
+    Math.round((quote.json.routeDistanceM * quote.json.ratePerKm) / 1e6) * 1000;
+  ok(quote.json.farePerSeat === expectedFare, 'fare = distance x rate per km (integer-safe)');
+
   const search = await call('POST', '/matching/search', pax.token, {
     pickup: PICK, dropoff: DROP, ...win,
   });
   ok(search.status < 300 && Array.isArray(search.json), 'matching search runs');
   ok(search.json.some((c) => c.rideId === rideId), 'corridor match finds our ride');
+  const cand = search.json.find((c) => c.rideId === rideId);
+  ok(cand.eligible === true && cand.detour && cand.detour.detourM >= 0,
+    'candidate carries detour metrics and is eligible');
+  ok(cand.detour.matchedRouteM <= cand.detour.originalRemainingM * 1.2 + 1,
+    'candidate respects the 120% matched-route limit');
+  ok(!!cand.fareQuote && cand.fareQuote.farePerSeat > 0, 'candidate carries the passenger fare quote');
+  ok(typeof cand.rankingReason === 'string' && cand.rankingReason.length > 0,
+    'ranking explanation is returned');
+
+  console.log('--- Max detour rule (20%) ---');
+  // Perpendicular offsets from a mid-route point (fraction 0.45, i.e. between
+  // PICK at 0.3 and DROP at 0.6, so pickup-before-dropoff ordering holds under
+  // any provider). ~125 km east is certain to blow the 20% budget.
+  const midRoute = routePoint(ride.json.route, 0.45, 'mid');
+  const FAR = { lat: midRoute.lat, lng: midRoute.lng + 1.2, label: 'far off-corridor' };
+  const farSearch = await call('POST', '/matching/search', pax.token, {
+    pickup: FAR, dropoff: DROP, ...win,
+  });
+  ok(farSearch.status < 300 && !farSearch.json.some((c) => c.rideId === rideId),
+    'far off-corridor pickup is not offered the ride');
+  const farPreview = await call('POST', '/matching/preview', pax.token, {
+    rideId, pickup: FAR, dropoff: DROP,
+  });
+  ok(farPreview.status < 300 && farPreview.json.eligible === false,
+    'match preview rejects the over-limit detour');
+  ok(farPreview.json.reasons.some((r) => /detour|Detour/.test(r)),
+    'preview explains the detour rejection');
+  const farBook = await call('POST', '/bookings', pax.token, {
+    rideId, pickup: FAR, dropoff: DROP,
+  });
+  ok(farBook.status === 409, 'booking with an over-limit detour is rejected');
+
+  // A moderate off-route pickup (~9 km): detour > 0 but within the 20% budget.
+  const MID_OFF = { lat: midRoute.lat, lng: midRoute.lng + 0.09, label: 'moderate detour pickup' };
+  const midPreview = await call('POST', '/matching/preview', pax.token, {
+    rideId, pickup: MID_OFF, dropoff: DROP,
+  });
+  ok(midPreview.status < 300 && midPreview.json.eligible === true,
+    'moderate off-corridor pickup stays eligible');
+  ok(midPreview.json.detour.detourM > 0, 'moderate pickup shows a positive detour');
+  ok(!!midPreview.json.fareQuote, 'preview includes the passenger fare quote');
 
   const book = await call('POST', '/bookings', pax.token, { rideId, pickup: PICK, dropoff: DROP });
   ok(book.status < 300 && book.json.id, 'book a seat');
   ok(book.json.status === 'matched', 'booking is matched');
+  ok(Number(book.json.route_distance_m) > 0, 'booking snapshots the passenger route distance');
+  ok(Number(book.json.fare) === Number(book.json.fare_per_seat) * book.json.seats,
+    'booking fare = snapshotted per-seat fare x seats');
+  ok(book.json.detour_m != null && Number(book.json.detour_m) >= 0,
+    'booking snapshots the driver detour');
   const bookingId = book.json.id;
+
+  const duplicate = await call('POST', '/bookings', pax.token, {
+    rideId, pickup: PICK, dropoff: DROP,
+  });
+  ok(duplicate.status === 409, 'duplicate active booking is rejected');
 
   console.log('--- Confirm & complete ---');
   const confirm = await call('POST', `/bookings/${bookingId}/confirm`, drv.token);
@@ -134,6 +212,14 @@ async function main() {
 
   const list = await call('GET', `/rides/${rideId}/bookings`, drv.token);
   ok(list.status < 300 && list.json.some((b) => b.id === bookingId), 'driver sees booking on ride');
+
+  const earlyPayment = await call('POST', '/transactions/complete', drv.token, { bookingId });
+  ok(earlyPayment.status === 409, 'payment before ride completion is rejected');
+
+  const waitMs = Math.max(0, new Date(ride.json.departure_time).getTime() - Date.now() + 250);
+  if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  const completeRide = await call('POST', `/rides/${rideId}/complete`, drv.token);
+  ok(completeRide.status < 300 && completeRide.json.status === 'completed', 'complete departed ride');
 
   const done = await call('POST', '/transactions/complete', drv.token, { bookingId });
   ok(done.status < 300 && done.json.transaction, 'complete records transaction');
@@ -144,14 +230,46 @@ async function main() {
   // relationship against the actual gross rather than a hard-coded amount.
   ok(Number(tx.platform_fee) === Math.round(gross * 0.1), '10% platform fee of gross');
   ok(Number(tx.driver_net) === gross - Number(tx.platform_fee), 'driver net = gross - fee');
+  const duplicatePayment = await call('POST', '/transactions/complete', drv.token, { bookingId });
+  ok(duplicatePayment.status === 409, 'duplicate payment is rejected');
 
   const rate = await call('POST', '/ratings', pax.token, { bookingId, score: 5, comment: 'Tot' });
   ok(rate.status < 300 && rate.json.id, 'passenger rates the trip');
 
   console.log('--- Reactive request (auto-match) ---');
-  const req = await call('POST', '/requests', pax.token, { pickup: PICK, dropoff: DROP, ...win });
+  const laterDeparture = Date.now() + 12 * 3600e3;
+  const ride2 = await call('POST', '/rides', drv.token, {
+    vehicleId: veh.json.id,
+    origin: VINH,
+    dest: HANOI,
+    departureTime: new Date(laterDeparture).toISOString(),
+    totalSeats: 6,
+  });
+  ok(ride2.status < 300 && ride2.json.id, 'post second available ride');
+  const reqPick = routePoint(ride2.json.route, 0.3, 'request pickup');
+  const reqDrop = routePoint(ride2.json.route, 0.6, 'request dropoff');
+  const req = await call('POST', '/requests', pax.token, {
+    pickup: reqPick,
+    dropoff: reqDrop,
+    windowStart: new Date(laterDeparture - 3600e3).toISOString(),
+    windowEnd: new Date(laterDeparture + 3600e3).toISOString(),
+  });
   ok(req.status < 300 && req.json.id, 'create ride request');
-  ok(req.json.status === 'matched', 'request auto-matched to the open ride');
+  ok(req.json.status === 'matched' && !!req.json.ride_id,
+    'request auto-matches to an available future ride');
+
+  const cancelRequest = await call('POST', `/bookings/${req.json.id}/cancel`, pax.token);
+  ok(cancelRequest.status < 300 && cancelRequest.json.status === 'cancelled',
+    'passenger cancels assigned request');
+
+  const rebook = await call('POST', '/bookings', pax.token, {
+    rideId: ride2.json.id, pickup: reqPick, dropoff: reqDrop,
+  });
+  ok(rebook.status < 300 && rebook.json.status === 'matched',
+    'cancelled passenger can book another available ride');
+  const cancelRide = await call('POST', `/rides/${ride2.json.id}/cancel`, drv.token);
+  ok(cancelRide.status < 300 && cancelRide.json.status === 'cancelled',
+    'driver cancellation terminates active passenger bookings');
 
   console.log(`\nAll ${passed} checks passed.`);
 }

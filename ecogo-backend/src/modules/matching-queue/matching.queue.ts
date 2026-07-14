@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
 export const MATCHING_QUEUE = 'MATCHING_QUEUE';
@@ -6,7 +6,7 @@ export const QUEUE_NAME = 'matching';
 export const REATTEMPT_DELAY_MS = 15 * 60 * 1000; // the brief's 15-minute SLA
 
 @Injectable()
-export class MatchingQueueProducer {
+export class MatchingQueueProducer implements OnModuleDestroy {
   constructor(@Inject(MATCHING_QUEUE) private readonly queue: Queue) {}
 
   /** Schedule a single delayed re-match. If still unmatched then, it escalates. */
@@ -21,5 +21,9 @@ export class MatchingQueueProducer {
         removeOnFail: true,
       },
     );
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.queue.close();
   }
 }

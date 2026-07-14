@@ -327,7 +327,7 @@ export class RidesService {
               ST_X(b.pickup) AS pickup_lng, ST_Y(b.pickup) AS pickup_lat,
               ST_X(b.dropoff) AS dropoff_lng, ST_Y(b.dropoff) AS dropoff_lat
        FROM bookings b JOIN users u ON u.id = b.passenger_id
-       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed')`,
+       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed','ongoing')`,
       [rideId],
     );
 
@@ -422,7 +422,7 @@ export class RidesService {
     }>(
       `SELECT b.id, b.fp, b.fd, b.pickup_label, b.dropoff_label, u.full_name AS passenger_name
        FROM bookings b JOIN users u ON u.id = b.passenger_id
-       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed')`,
+       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed','ongoing')`,
       [rideId],
     );
     const stops = buildItinerary(
@@ -480,6 +480,7 @@ export class RidesService {
       `SELECT b.id, b.passenger_id, u.full_name AS passenger_name, u.phone AS passenger_phone,
               b.pickup_label, b.dropoff_label, b.pickup_address, b.dropoff_address,
               b.seats, b.fare, b.status,
+              b.route_distance_m, b.detour_m, b.detour_pct, b.extra_duration_s,
               COALESCE(
                 (SELECT json_agg(json_build_object(
                     'fullName', bp.full_name, 'phone', bp.phone, 'email', bp.email)
@@ -588,7 +589,7 @@ export class RidesService {
               ST_Y(b.pickup) AS lat, ST_X(b.pickup) AS lng,
               r.departure_time, r.duration_s
        FROM bookings b JOIN rides r ON r.id = b.ride_id
-       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed')
+       WHERE b.ride_id = $1 AND b.status IN ('matched','confirmed','ongoing')
        ORDER BY b.fp ASC LIMIT 1`,
       [rideId],
     );
@@ -673,7 +674,7 @@ export class RidesService {
       const affected = (
         await client.query(
           `UPDATE bookings SET status = 'cancelled'
-           WHERE ride_id = $1 AND status IN ('matched','confirmed')
+           WHERE ride_id = $1 AND status IN ('matched','confirmed','ongoing')
            RETURNING id, passenger_id`,
           [rideId],
         )

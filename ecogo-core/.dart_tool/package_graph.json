@@ -7,6 +7,7 @@
       "name": "ecogo_core",
       "version": "0.1.0",
       "dependencies": [
+        "cupertino_icons",
         "flutter",
         "http",
         "shared_preferences",
@@ -73,6 +74,11 @@
         "meta",
         "web"
       ]
+    },
+    {
+      "name": "cupertino_icons",
+      "version": "1.0.9",
+      "dependencies": []
     },
     {
       "name": "flutter",

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
@@ -45,6 +47,8 @@ class _CompanionForm {
 class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   late LatLng _pickup;
   late LatLng _dropoff;
+  String? _pickupPlaceId;
+  String? _dropoffPlaceId;
   final _pickupAddr = TextEditingController();
   final _dropoffAddr = TextEditingController();
   late int _seats;
@@ -55,15 +59,65 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   bool _busy = false;
   final _map = MapController();
 
+  // Live fare preview for the precise points on the map.
+  FareQuote? _quote;
+  bool _quoting = false;
+  String? _quoteError;
+  Timer? _quoteDebounce;
+
   @override
   void initState() {
     super.initState();
     _pickup = LatLng(widget.pickupStop.lat, widget.pickupStop.lng);
     _dropoff = LatLng(widget.dropoffStop.lat, widget.dropoffStop.lng);
+    _pickupPlaceId = widget.pickupStop.placeId;
+    _dropoffPlaceId = widget.dropoffStop.placeId;
+    // The searched addresses are the default precise addresses.
+    _pickupAddr.text = widget.pickupStop.label;
+    _dropoffAddr.text = widget.dropoffStop.label;
     final maxSeats = widget.availableSeats ?? 4;
     _seats = widget.seats.clamp(1, maxSeats < 1 ? 1 : maxSeats);
     _syncCompanions();
     _seatMap = context.read<AppState>().rides.seatMap(widget.rideId);
+    _refreshQuote();
+  }
+
+  void _scheduleQuote() {
+    _quoteDebounce?.cancel();
+    _quoteDebounce = Timer(const Duration(milliseconds: 600), _refreshQuote);
+  }
+
+  Future<void> _refreshQuote() async {
+    final p = _pickup;
+    final d = _dropoff;
+    setState(() {
+      _quoting = true;
+      _quoteError = null;
+    });
+    try {
+      final q = await context.read<AppState>().bookings.quote(
+            pickup: Stop('pickup', p.latitude, p.longitude),
+            dropoff: Stop('dropoff', d.latitude, d.longitude),
+            seats: _seats,
+          );
+      if (!mounted || p != _pickup || d != _dropoff) return;
+      setState(() {
+        _quote = q;
+        _quoting = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _quoting = false;
+        _quoteError = e.friendly;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _quoting = false;
+        _quoteError = 'Không tính được giá, thử lại nhé';
+      });
+    }
   }
 
   void _syncCompanions() {
@@ -78,6 +132,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   @override
   void dispose() {
+    _quoteDebounce?.cancel();
     _pickupAddr.dispose();
     _dropoffAddr.dispose();
     for (final c in _companions) {
@@ -117,8 +172,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     try {
       final b = await context.read<AppState>().bookings.book(
             rideId: widget.rideId,
-            pickup: Stop(widget.pickupStop.label, _pickup.latitude, _pickup.longitude),
-            dropoff: Stop(widget.dropoffStop.label, _dropoff.latitude, _dropoff.longitude),
+            pickup: Stop(widget.pickupStop.label, _pickup.latitude, _pickup.longitude,
+                placeId: _pickupPlaceId),
+            dropoff: Stop(widget.dropoffStop.label, _dropoff.latitude, _dropoff.longitude,
+                placeId: _dropoffPlaceId),
             seats: _seats,
             pickupAddress: _pickupAddr.text,
             dropoffAddress: _dropoffAddr.text,
@@ -170,6 +227,62 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     });
   }
 
+  /// Fare preview for the precise points: distance the passenger travels and
+  /// the resulting fare, with loading / error+retry states.
+  Widget _fareCard() {
+    Widget child;
+    if (_quoting) {
+      child = const Row(children: [
+        SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        SizedBox(width: 10),
+        Text('Đang tính quãng đường và giá…', style: TextStyle(fontSize: 13)),
+      ]);
+    } else if (_quoteError != null) {
+      child = Row(children: [
+        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(_quoteError!, style: const TextStyle(fontSize: 13))),
+        TextButton(onPressed: _refreshQuote, child: const Text('Thử lại')),
+      ]);
+    } else if (_quote != null) {
+      final q = _quote!;
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.route, size: 16, color: ecogoGreen),
+            const SizedBox(width: 8),
+            Text('Quãng đường của bạn: ${q.routeDistanceKm.toStringAsFixed(1)} km',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.payments, size: 16, color: ecogoGreen),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${formatMoney(q.farePerSeat)}/ghế × $_seats = ${formatMoney(q.farePerSeat * _seats)}',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 14, color: ecogoGreen),
+              ),
+            ),
+          ]),
+        ],
+      );
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F7F2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+  }
+
   Widget _rideSummary() {
     final c = widget.candidate;
     if (c == null) return const SizedBox.shrink();
@@ -210,7 +323,21 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13)),
             ],
           ),
-          if (pricePerSeat != null) ...[
+          if (c.detour != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.alt_route, size: 16, color: Colors.black.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Text(
+                  'Tài xế đi vòng thêm ${c.detour!.detourKm.toStringAsFixed(1)} km '
+                  '(${(c.detour!.detourPct * 100).toStringAsFixed(0)}%)',
+                  style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13),
+                ),
+              ],
+            ),
+          ],
+          if (_quote == null && pricePerSeat != null) ...[
             const SizedBox(height: 6),
             Row(
               children: [
@@ -222,10 +349,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: ecogoGreen)),
               ],
             ),
-            const SizedBox(height: 4),
-            Text('Giá cuối cùng tính theo quãng đường thực tế của bạn.',
-                style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
           ],
+          _fareCard(),
+          const SizedBox(height: 4),
+          Text('Giá cuối cùng tính theo quãng đường thực tế của bạn.',
+              style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
         ],
       ),
     );
@@ -327,6 +455,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           _rideSummary(),
+          if (widget.candidate == null) _fareCard(),
           const Text('Chọn chính xác điểm đón và điểm trả trên bản đồ',
               style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
@@ -352,13 +481,18 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 options: MapOptions(
                   initialCenter: _editingPickup ? _pickup : _dropoff,
                   initialZoom: 12,
-                  onTap: (_, p) => setState(() {
-                    if (_editingPickup) {
-                      _pickup = p;
-                    } else {
-                      _dropoff = p;
-                    }
-                  }),
+                  onTap: (_, p) {
+                    setState(() {
+                      if (_editingPickup) {
+                        _pickup = p;
+                        _pickupPlaceId = null; // moved off the geocoded place
+                      } else {
+                        _dropoff = p;
+                        _dropoffPlaceId = null;
+                      }
+                    });
+                    _scheduleQuote();
+                  },
                 ),
                 children: [
                   TileLayer(

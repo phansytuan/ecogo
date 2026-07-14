@@ -59,6 +59,26 @@ export function TripPanel({ trip, onClose }: { trip: TripInfo; onClose: () => vo
           <dt>Số ghế</dt>
           <dd>{seg.seats}</dd>
 
+          {seg.routeDistanceKm != null && (
+            <>
+              <dt>Khách đi</dt>
+              <dd>{seg.routeDistanceKm.toFixed(1)} km (tính giá)</dd>
+            </>
+          )}
+
+          {seg.detourKm != null && (
+            <>
+              <dt>Tài xế đi vòng</dt>
+              <dd>
+                +{seg.detourKm.toFixed(1)} km
+                {seg.detourPct != null && <> ({(seg.detourPct * 100).toFixed(1)}%)</>}
+                {seg.extraDurationS != null && seg.extraDurationS > 0 && (
+                  <> · +{Math.round(seg.extraDurationS / 60)} phút</>
+                )}
+              </dd>
+            </>
+          )}
+
           <dt>Giá</dt>
           <dd>{seg.fare == null ? '—' : money(seg.fare)}</dd>
         </dl>

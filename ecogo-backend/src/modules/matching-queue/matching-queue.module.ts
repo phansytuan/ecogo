@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { MatchingModule } from '../matching/matching.module';
 import { REDIS_CONN, RedisConn } from '../../redis/redis.module';
@@ -11,7 +11,12 @@ import { MatchingProcessor } from './matching.processor';
     {
       provide: MATCHING_QUEUE,
       inject: [REDIS_CONN],
-      useFactory: (conn: RedisConn) => new Queue(QUEUE_NAME, { connection: conn }),
+      useFactory: (conn: RedisConn) => {
+        const queue = new Queue(QUEUE_NAME, { connection: conn });
+        const logger = new Logger('MatchingQueue');
+        queue.on('error', (error) => logger.error(`connection error: ${error.message}`));
+        return queue;
+      },
     },
     MatchingQueueProducer,
     MatchingProcessor,

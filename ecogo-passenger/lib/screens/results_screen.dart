@@ -184,10 +184,20 @@ class _ResultsScreenState extends State<ResultsScreen> {
                                 '${dateFmt.format(c.departureTime.toLocal())} ${fmt.format(c.departureTime.toLocal())}'),
                             _row(Icons.my_location, 'Đón bạn',
                                 '${fmt.format(c.etaPickup.toLocal())} (ước tính)'),
-                            _row(Icons.alt_route, 'Lệch tuyến', _formatOffset(c.totalOffsetM)),
-                            _row(Icons.route, 'Quãng đường chung', '${c.sharedKm.toStringAsFixed(1)} km'),
+                            if (c.fareQuote != null)
+                              _row(Icons.route, 'Quãng đường của bạn',
+                                  '${c.fareQuote!.routeDistanceKm.toStringAsFixed(1)} km')
+                            else
+                              _row(Icons.alt_route, 'Lệch tuyến', _formatOffset(c.totalOffsetM)),
+                            if (c.detour != null)
+                              _row(Icons.alt_route, 'Tài xế đi vòng thêm',
+                                  '+${c.detour!.detourKm.toStringAsFixed(1)} km '
+                                  '(${(c.detour!.detourPct * 100).toStringAsFixed(0)}%)'),
                             _row(Icons.event_seat, 'Còn ghế', '${c.availableSeats}'),
-                            if (c.pricePerSeat != null)
+                            if (c.fareQuote != null)
+                              _row(Icons.payments, 'Giá mỗi ghế (ước tính)',
+                                  formatMoney(c.fareQuote!.farePerSeat))
+                            else if (c.pricePerSeat != null)
                               _row(Icons.payments, 'Giá mỗi ghế', formatMoney(c.pricePerSeat!)),
                             const SizedBox(height: 12),
                             SizedBox(

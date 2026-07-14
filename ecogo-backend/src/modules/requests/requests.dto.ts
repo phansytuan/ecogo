@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsISO8601, IsOptional, Min, ValidateNested } from 'class-validator';
+import {
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { GeoPointDto } from '../rides/rides.dto';
 
 export class CreateRequestDto {
@@ -10,6 +18,17 @@ export class CreateRequestDto {
   @ValidateNested()
   @Type(() => GeoPointDto)
   dropoff!: GeoPointDto;
+
+  /** Precise formatted addresses from the place search, when available. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  pickupAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  dropoffAddress?: string;
 
   @IsISO8601()
   windowStart!: string;

@@ -66,11 +66,15 @@ NestJS with one module per domain under `src/modules/`. All modules use raw SQL 
    - Extra endpoints beyond CRUD: `POST /rides/quote`, `GET /rides/:id/itinerary`, `GET /rides/:id/route` (dynamic route), `GET/POST /rides/:id/charter*`, `POST /rides/:id/complete`.
 
 3. **Corridor matching** (`modules/matching/`, `modules/matching-queue/`):
-   - `MatchingService.search()` runs the PostGIS query (four `ST_DWithin`/`ST_LineLocatePoint` clauses) to find rides whose route passes within tolerance of the passenger's pickup **and** dropoff, in the right direction (`fp < fd`).
-   - `ranking.ts` scores candidates in TypeScript (off-route distance, pickup-time mismatch, driver rating) — pure functions, unit-tested in `ranking.spec.ts`.
-   - Two profiles: `strict` (tolerance 2 km, used for auto-matching) and `relaxed` (5 km, used by dispatcher).
-   - `AssignmentService` handles the actual booking transaction with a `FOR UPDATE` lock on the ride row.
+   - Two stages: `MatchingService.search()` first runs the PostGIS prefilter (`ST_DWithin`/`ST_LineLocatePoint`; the tolerance widens with `rides.distance_m * MATCHING_MAX_DETOUR_RATIO / 2` so off-corridor points survive when the ride is long enough to absorb them), then `DetourService` routes the top candidates via the directions provider.
+   - **Detour rule**: a ride is eligible only while `matched route ≤ original remaining route × (1 + MATCHING_MAX_DETOUR_RATIO)` (default 0.20). `detour.ts` holds the pure logic (insertion-plan enumeration, eligibility, ranking: lowest detour → lowest detour % → more seats → earlier creation); `detour.service.ts` builds road distances **leg by leg** through the cached provider (never multi-waypoint calls, never haversine as a final distance).
+   - Two profiles: `strict` (auto-matching — ineligible rides are dropped) and `relaxed` (dispatcher — ineligible rides are returned annotated with `exclusionReason`; a dispatcher may knowingly override).
+   - `POST /matching/preview` evaluates one specific ride (detour metrics + fare + reasons) before booking.
+   - `AssignmentService`/`BookingsService` re-validate transactionally: routing happens before the `FOR UPDATE` lock, and the tx aborts with 409 if the ride's active-booking set changed since evaluation.
+   - Passenger fare = **their own** road distance × bracket rate (`pricing.fareForDistanceM`, integer VND), never the driver's detour; all pricing/detour inputs are snapshotted on the booking (migration 013).
    - BullMQ queue (`matching-queue/`) drives the retry/escalation flow: if auto-match fails, the booking is marked `no_match` and surfaced to dispatchers via WebSocket.
+
+3b. **Places** (`modules/places/`) — address autocomplete / place detail / reverse geocoding, proxied through the backend (`GET /places/*`) with a swappable provider (`PLACES_PROVIDER=fake|goong`) and Redis caching. Clients never call the map provider directly; the backend trusts only coordinates, never address text.
 
 4. **Realtime** (`modules/realtime/`) — Socket.io gateway. Two channel types:
    - `ride:<id>` — driver + passengers of a specific ride (location updates, booking events).
@@ -95,6 +99,9 @@ Copy `ecogo-backend/.env.example`. Key settings:
 - `OTP_PROVIDER=fake` — OTP code is returned in the API response (dev only).
 - `DIRECTIONS_PROVIDER=fake` — uses straight-line geometry (no Goong API key needed).
 - `RIDES_MAX_BACKDATE_MIN` / `RIDES_MAX_AHEAD_DAYS` — how late a driver may log a departure and how far ahead a ride may be scheduled (see `departure.ts`).
+- `MATCHING_MAX_DETOUR_RATIO` (default 0.20) — the maximum driver detour as a fraction of the remaining route; `MATCHING_MAX_ROUTED_CANDIDATES` / `MATCHING_MAX_ROUTED_COMBOS` / `MATCHING_ROUTING_TIMEOUT_MS` bound routing-provider spend per search.
+- `PLACES_PROVIDER` (defaults to `DIRECTIONS_PROVIDER`) — geocoding provider for `/places/*`.
+- Note: Goong's Direction API silently ignores a `waypoints` parameter — `GoongDirectionsService` therefore chains one Direction call per leg for multi-stop routes.
 - For production: set `DIRECTIONS_PROVIDER=goong` + `GOONG_API_KEY`, use a real `JWT_SECRET`, and set `OTP_PROVIDER` to the SMS provider.
 
 ## Known MVP shortcuts

@@ -10,10 +10,10 @@ export interface CleanupResult {
 
 /**
  * Periodic housekeeping so stale rows don't linger:
- *  - open rides past departure (+grace) that nobody booked  -> 'expired'
+ *  - unfinished rides past estimated completion (+grace)   -> 'expired'
  *  - ride-requests whose match window has passed (+grace)    -> 'cancelled'
- * Conservative on purpose: rides that have active bookings are left for the
- * driver to complete, never auto-expired.
+ * Ride and booking terminal states are updated atomically, so a missed driver
+ * completion cannot leave either side permanently busy.
  */
 @Injectable()
 export class MaintenanceService {
@@ -38,25 +38,36 @@ export class MaintenanceService {
     const rideGraceH = this.config.get<number>('maintenance.rideGraceHours') ?? 2;
     const reqGraceMin = this.config.get<number>('maintenance.requestGraceMin') ?? 30;
 
-    const expired = await this.db.query<{ id: string }>(
-      `UPDATE rides SET status = 'expired'
-       WHERE status = 'open'
-         AND departure_time < now() - make_interval(hours => $1)
-         AND NOT EXISTS (
-           SELECT 1 FROM bookings b
-           WHERE b.ride_id = rides.id AND b.status IN ('matched','confirmed')
-         )
-       RETURNING id`,
-      [rideGraceH],
-    );
-
-    const cancelled = await this.db.query<{ id: string }>(
-      `UPDATE bookings SET status = 'cancelled'
-       WHERE status IN ('pending','no_match','processing')
-         AND req_window_end < now() - make_interval(mins => $1)
-       RETURNING id`,
-      [reqGraceMin],
-    );
+    const { expired, cancelled } = await this.db.tx(async (client) => {
+      const expired = (
+        await client.query<{ id: string }>(
+          `UPDATE rides SET status = 'expired', available_seats = 0
+           WHERE status IN ('open','full','ongoing')
+             AND departure_time + duration_s * interval '1 second'
+                 < now() - make_interval(hours => $1)
+           RETURNING id`,
+          [rideGraceH],
+        )
+      ).rows;
+      if (expired.length) {
+        await client.query(
+          `UPDATE bookings SET status = 'cancelled'
+           WHERE ride_id = ANY($1::uuid[])
+             AND status IN ('matched','confirmed','ongoing')`,
+          [expired.map((ride) => ride.id)],
+        );
+      }
+      const cancelled = (
+        await client.query<{ id: string }>(
+          `UPDATE bookings SET status = 'cancelled', claimed_by = NULL, claimed_at = NULL
+           WHERE status IN ('pending','no_match','processing')
+             AND req_window_end < now() - make_interval(mins => $1)
+           RETURNING id`,
+          [reqGraceMin],
+        )
+      ).rows;
+      return { expired, cancelled };
+    });
 
     return { expiredRides: expired.length, cancelledRequests: cancelled.length };
   }

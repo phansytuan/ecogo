@@ -7,6 +7,7 @@ class AppState extends ChangeNotifier {
   late final ApiClient api;
   late final AuthService auth;
   late final MatchingService matching;
+  late final PlacesService places;
   late final RidesService rides;
   late final BookingsService bookings;
   late final ChatService chat;
@@ -24,6 +25,7 @@ class AppState extends ChangeNotifier {
     );
     auth = AuthService(api, tokens);
     matching = MatchingService(api);
+    places = PlacesService(api);
     rides = RidesService(api);
     bookings = BookingsService(api);
     chat = ChatService(api);

@@ -25,6 +25,12 @@ export class GeoPointDto {
   @IsOptional()
   @IsString()
   label?: string;
+
+  /** Geocoding-provider reference for this point, when it came from a place search. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  placeId?: string;
 }
 
 export class QuoteDto {

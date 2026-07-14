@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import IORedis from 'ioredis';
 
@@ -21,8 +21,14 @@ function parse(url: string): RedisConn {
     {
       provide: REDIS,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new IORedis(config.get<string>('redisUrl') as string, { maxRetriesPerRequest: null }),
+      useFactory: (config: ConfigService) => {
+        const redis = new IORedis(config.get<string>('redisUrl') as string, {
+          maxRetriesPerRequest: null,
+        });
+        const logger = new Logger('Redis');
+        redis.on('error', (error) => logger.error(`connection error: ${error.message}`));
+        return redis;
+      },
     },
     {
       provide: REDIS_CONN,

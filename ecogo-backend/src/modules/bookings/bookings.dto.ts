@@ -27,6 +27,22 @@ export class CompanionDto {
   email?: string;
 }
 
+/** Fare quote request — no ride yet, just the passenger's two points. */
+export class QuoteBookingDto {
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  pickup!: GeoPointDto;
+
+  @ValidateNested()
+  @Type(() => GeoPointDto)
+  dropoff!: GeoPointDto;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  seats?: number;
+}
+
 export class CreateBookingDto {
   @IsUUID()
   rideId!: string;

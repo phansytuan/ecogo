@@ -22,6 +22,21 @@ export default () => ({
     maxBackdateMin: parseInt(process.env.RIDES_MAX_BACKDATE_MIN ?? '60', 10),
     maxAheadDays: parseInt(process.env.RIDES_MAX_AHEAD_DAYS ?? '30', 10),
   },
+  matching: {
+    // A ride is eligible while matched distance <= original * (1 + ratio).
+    maxDetourRatio: parseFloat(process.env.MATCHING_MAX_DETOUR_RATIO ?? '0.20'),
+    // Routing-provider budget: rides evaluated per search, and insertion
+    // combinations routed per ride (remaining combos are pruned by a cheap
+    // haversine estimate). Both bound external API spend.
+    maxRoutedCandidates: parseInt(process.env.MATCHING_MAX_ROUTED_CANDIDATES ?? '8', 10),
+    maxRoutedCombos: parseInt(process.env.MATCHING_MAX_ROUTED_COMBOS ?? '6', 10),
+    routingTimeoutMs: parseInt(process.env.MATCHING_ROUTING_TIMEOUT_MS ?? '8000', 10),
+  },
+  places: {
+    provider: process.env.PLACES_PROVIDER ?? process.env.DIRECTIONS_PROVIDER ?? 'fake',
+    goongApiKey: process.env.GOONG_API_KEY ?? '',
+    cacheTtlS: parseInt(process.env.PLACES_CACHE_TTL_S ?? '86400', 10),
+  },
   maintenance: {
     rideGraceHours: parseInt(process.env.MAINTENANCE_RIDE_GRACE_HOURS ?? '2', 10),
     requestGraceMin: parseInt(process.env.MAINTENANCE_REQUEST_GRACE_MIN ?? '30', 10),

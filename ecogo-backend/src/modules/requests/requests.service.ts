@@ -17,12 +17,13 @@ export class RequestsService {
   async create(passengerId: string, dto: CreateRequestDto) {
     const created = await this.db.one<{ id: string }>(
       `INSERT INTO bookings
-         (passenger_id, pickup, dropoff, pickup_label, dropoff_label, seats, status,
-          req_window_start, req_window_end, req_desired_pickup)
+         (passenger_id, pickup, dropoff, pickup_label, dropoff_label,
+          pickup_address, dropoff_address, pickup_place_id, dropoff_place_id,
+          seats, status, req_window_start, req_window_end, req_desired_pickup)
        VALUES ($1,
                ST_SetSRID(ST_MakePoint($2,$3),4326),
                ST_SetSRID(ST_MakePoint($4,$5),4326),
-               $6,$7,$8,'pending',$9,$10,$11)
+               $6,$7,$8,$9,$10,$11,$12,'pending',$13,$14,$15)
        RETURNING id`,
       [
         passengerId,
@@ -32,6 +33,10 @@ export class RequestsService {
         dto.dropoff.lat,
         dto.pickup.label ?? null,
         dto.dropoff.label ?? null,
+        dto.pickupAddress ?? null,
+        dto.dropoffAddress ?? null,
+        dto.pickup.placeId ?? null,
+        dto.dropoff.placeId ?? null,
         dto.seats ?? 1,
         dto.windowStart,
         dto.windowEnd,
