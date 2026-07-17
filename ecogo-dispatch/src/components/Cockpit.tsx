@@ -3,6 +3,7 @@ import { KpiBar } from './KpiBar';
 import { QueuePanel } from './QueuePanel';
 import { MapPanel } from './MapPanel';
 import { CandidatesPanel } from './CandidatesPanel';
+import { ReviewsPanel } from './ReviewsPanel';
 import { TripPanel } from './TripPanel';
 
 const STATUS_LABEL = { online: 'Trực tuyến', connecting: 'Đang kết nối…', offline: 'Mất kết nối' };
@@ -24,6 +25,11 @@ export function Cockpit({ onLogout }: { onLogout: () => void }) {
         <button className="logout" onClick={onLogout}>Đăng xuất</button>
       </header>
       <KpiBar queue={d.queue} />
+      <ReviewsPanel
+        reviews={d.reviews}
+        busyRideId={d.busyReviewId}
+        onResolve={d.resolveReview}
+      />
       <div className="grid">
         <QueuePanel
           queue={d.queue}
