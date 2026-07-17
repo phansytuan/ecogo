@@ -31,6 +31,11 @@ interface BookingCancelledEvent {
   by: string;
 }
 
+interface RideRequiresReviewEvent {
+  rideId: string;
+  driverId: string;
+}
+
 @Injectable()
 export class NotificationsListener {
   constructor(private readonly notifications: NotificationsService) {}
@@ -95,5 +100,15 @@ export class NotificationsListener {
         { bookingId: b.id },
       );
     }
+  }
+
+  @OnEvent('ride.requires_review')
+  async onRideRequiresReview(e: RideRequiresReviewEvent) {
+    await this.notifications.pushToUser(
+      e.driverId,
+      'Chuyến chưa được hoàn thành',
+      'Chuyến của bạn đã quá giờ dự kiến. Mở app để bấm hoàn thành hoặc liên hệ điều phối.',
+      { rideId: e.rideId },
+    );
   }
 }
