@@ -1,4 +1,6 @@
 import {
+  FIRST_MATCH_ATTEMPTS,
+  FIRST_MATCH_BACKOFF_MS,
   MatchingQueueProducer,
   REATTEMPT_ATTEMPTS,
   REATTEMPT_BACKOFF_MS,
@@ -6,6 +8,26 @@ import {
 } from './matching.queue';
 
 describe('MatchingQueueProducer', () => {
+  it('schedules an immediate first-match job with retries', async () => {
+    const queue = { add: jest.fn() };
+    const producer = new MatchingQueueProducer(queue as any);
+
+    await producer.scheduleFirstMatch('booking-1');
+
+    expect(queue.add).toHaveBeenCalledWith(
+      'first-match',
+      { bookingId: 'booking-1' },
+      {
+        delay: 0,
+        jobId: 'first-match-booking-1',
+        attempts: FIRST_MATCH_ATTEMPTS,
+        backoff: { type: 'exponential', delay: FIRST_MATCH_BACKOFF_MS },
+        removeOnComplete: true,
+        removeOnFail: { count: 100 },
+      },
+    );
+  });
+
   it('schedules a retried reattempt job with retained failures', async () => {
     const queue = { add: jest.fn() };
     const producer = new MatchingQueueProducer(queue as any);

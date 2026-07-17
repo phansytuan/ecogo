@@ -41,6 +41,19 @@ async function call(method, path, token, body) {
   return { status: res.status, json };
 }
 
+async function waitForRequest(bookingId, token, expectedStatus, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const mine = await call('GET', '/requests/mine', token);
+    const request = Array.isArray(mine.json)
+      ? mine.json.find((item) => item.id === bookingId)
+      : null;
+    if (request?.status === expectedStatus) return request;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return null;
+}
+
 async function login(phone) {
   const r1 = await call('POST', '/auth/request-otp', null, { phone });
   ok(r1.status < 300, `request-otp ${phone}`);
@@ -255,8 +268,11 @@ async function main() {
     windowEnd: new Date(laterDeparture + 3600e3).toISOString(),
   });
   ok(req.status < 300 && req.json.id, 'create ride request');
-  ok(req.json.status === 'matched' && !!req.json.ride_id,
-    'request auto-matches to an available future ride');
+  ok(req.json.status === 'pending' && !req.json.ride_id,
+    'request returns pending before asynchronous matching');
+  const matchedRequest = await waitForRequest(req.json.id, pax.token, 'matched');
+  ok(!!matchedRequest?.ride_id,
+    'request asynchronously auto-matches to an available future ride');
 
   const cancelRequest = await call('POST', `/bookings/${req.json.id}/cancel`, pax.token);
   ok(cancelRequest.status < 300 && cancelRequest.json.status === 'cancelled',

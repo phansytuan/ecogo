@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nest
 import { Job, Worker } from 'bullmq';
 import { REDIS_CONN, RedisConn } from '../../redis/redis.module';
 import { AssignmentService } from '../matching/assignment.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { MatchingQueueProducer } from './matching.queue';
 import { QUEUE_NAME } from './matching.queue';
 
 @Injectable()
@@ -12,16 +14,22 @@ export class MatchingProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(REDIS_CONN) private readonly conn: RedisConn,
     private readonly assignment: AssignmentService,
+    private readonly queue: MatchingQueueProducer,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async process(job: Job): Promise<void> {
-    if (job.name !== 'reattempt') return;
+    if (job.name !== 'first-match' && job.name !== 'reattempt') return;
     const { bookingId } = job.data as { bookingId: string };
 
     try {
       const matched = await this.assignment.tryAutoMatch(bookingId);
       if (!matched) {
-        await this.assignment.markNoMatch(bookingId);
+        if (job.name === 'first-match') {
+          await this.scheduleReattempt(bookingId);
+        } else {
+          await this.assignment.markNoMatch(bookingId);
+        }
       }
     } catch (error) {
       this.logger.error(
@@ -33,20 +41,33 @@ export class MatchingProcessor implements OnModuleInit, OnModuleDestroy {
       const isFinalAttempt =
         job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
       if (isFinalAttempt) {
-        try {
-          await this.assignment.markNoMatch(bookingId);
-        } catch (escalationError) {
-          this.logger.error(
-            `Failed to escalate booking ${bookingId} to no_match: ${
-              escalationError instanceof Error
-                ? escalationError.message
-                : String(escalationError)
-            }`,
-          );
-        }
+        await this.escalateAfterFinalFailure(job.name, bookingId);
       }
 
       throw error;
+    }
+  }
+
+  private async scheduleReattempt(bookingId: string): Promise<void> {
+    await this.queue.scheduleReattempt(bookingId);
+    this.realtime.emitToDispatch('request.pending', { id: bookingId });
+  }
+
+  private async escalateAfterFinalFailure(jobName: string, bookingId: string): Promise<void> {
+    try {
+      if (jobName === 'first-match') {
+        await this.scheduleReattempt(bookingId);
+      } else {
+        await this.assignment.markNoMatch(bookingId);
+      }
+    } catch (escalationError) {
+      this.logger.error(
+        `Failed to escalate booking ${bookingId} after ${jobName}: ${
+          escalationError instanceof Error
+            ? escalationError.message
+            : String(escalationError)
+        }`,
+      );
     }
   }
 
