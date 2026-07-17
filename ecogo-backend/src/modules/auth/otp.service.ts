@@ -1,37 +1,101 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import type IORedis from 'ioredis';
+import { REDIS } from '../../redis/redis.module';
 
 interface OtpEntry {
   code: string;
-  expiresAt: number;
+  attempts: number;
 }
 
+const CODE_TTL_S = 300;
+const MAX_ATTEMPTS = 5;
+const RESEND_COOLDOWN_S = 60;
+
 /**
- * Dev OTP store. In production, swap for Firebase Auth phone or an SMS provider
- * (eSMS/FPT). Codes are kept in memory and also returned in the API response
- * when OTP_PROVIDER=fake, so the client/dev can complete the flow without SMS.
+ * Redis-backed OTP store shared across backend processes and restarts.
+ * Codes expire automatically, wrong attempts are capped, and requests have a
+ * per-phone cooldown. The fake provider still returns codes for development.
  */
 @Injectable()
 export class OtpService {
-  private readonly logger = new Logger(OtpService.name);
-  private readonly store = new Map<string, OtpEntry>();
-  private readonly ttlMs = 5 * 60 * 1000;
+  constructor(@Inject(REDIS) private readonly redis: IORedis) {}
 
-  issue(phone: string): { code: string; devReturn: boolean } {
+  async issue(
+    phone: string,
+  ): Promise<{ code: string; devReturn: boolean }> {
+    const cooldownKey = `otp:cd:${phone}`;
+    const codeKey = `otp:code:${phone}`;
+
+    if (await this.redis.exists(cooldownKey)) {
+      throw new HttpException(
+        'Please wait before requesting another code',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    this.store.set(phone, { code, expiresAt: Date.now() + this.ttlMs });
-    this.logger.debug(`OTP for ${phone}: ${code}`);
-    return { code, devReturn: (process.env.OTP_PROVIDER ?? 'fake') === 'fake' };
+    await this.redis.set(
+      cooldownKey,
+      '1',
+      'EX',
+      RESEND_COOLDOWN_S,
+    );
+    await this.redis.set(
+      codeKey,
+      JSON.stringify({ code, attempts: 0 }),
+      'EX',
+      CODE_TTL_S,
+    );
+
+    return {
+      code,
+      devReturn: (process.env.OTP_PROVIDER ?? 'fake') === 'fake',
+    };
   }
 
-  verify(phone: string, code: string): boolean {
-    const entry = this.store.get(phone);
-    if (!entry) return false;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(phone);
+  async verify(phone: string, code: string): Promise<boolean> {
+    const codeKey = `otp:code:${phone}`;
+    const raw = await this.redis.get(codeKey);
+
+    if (!raw) {
       return false;
     }
-    const ok = entry.code === code;
-    if (ok) this.store.delete(phone);
-    return ok;
+
+    let entry: OtpEntry;
+    try {
+      entry = JSON.parse(raw) as OtpEntry;
+    } catch {
+      return false;
+    }
+
+    if (
+      !entry ||
+      typeof entry.code !== 'string' ||
+      typeof entry.attempts !== 'number'
+    ) {
+      return false;
+    }
+
+    if (entry.attempts >= MAX_ATTEMPTS) {
+      await this.redis.del(codeKey);
+      return false;
+    }
+
+    if (entry.code === code) {
+      await this.redis.del(codeKey);
+      return true;
+    }
+
+    await this.redis.set(
+      codeKey,
+      JSON.stringify({ ...entry, attempts: entry.attempts + 1 }),
+      'KEEPTTL',
+    );
+    return false;
   }
 }

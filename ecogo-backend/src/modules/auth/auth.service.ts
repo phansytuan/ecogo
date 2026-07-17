@@ -22,13 +22,13 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  requestOtp(phone: string) {
-    const { code, devReturn } = this.otp.issue(phone);
+  async requestOtp(phone: string) {
+    const { code, devReturn } = await this.otp.issue(phone);
     return devReturn ? { sent: true, devCode: code } : { sent: true };
   }
 
   async verifyOtp(phone: string, code: string) {
-    if (!this.otp.verify(phone, code)) {
+    if (!(await this.otp.verify(phone, code))) {
       throw new UnauthorizedException('Invalid or expired code');
     }
     const user = await this.users.findOrCreateByPhone(phone);
