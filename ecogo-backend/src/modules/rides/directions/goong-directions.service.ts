@@ -3,6 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
 
+const MAX_TRIES = 3;
+const BACKOFF_MS = [300, 900];
+const BREAKER_THRESHOLD = 10;
+const BREAKER_OPEN_MS = 30_000;
+
 /**
  * Goong Directions. Returns an encoded polyline we decode into [lng,lat] pairs.
  * Docs: https://docs.goong.io/rest/direction/
@@ -15,6 +20,8 @@ import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
 @Injectable()
 export class GoongDirectionsService implements DirectionsProvider {
   private readonly logger = new Logger(GoongDirectionsService.name);
+  private consecutiveFailures = 0;
+  private openUntil = 0;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -35,19 +42,75 @@ export class GoongDirectionsService implements DirectionsProvider {
     };
   }
 
+  private async fetchDirection(params: Record<string, string>): Promise<any> {
+    if (Date.now() < this.openUntil) {
+      throw new Error('Goong circuit open — routing temporarily unavailable');
+    }
+
+    let lastError: unknown = new Error('Goong direction request failed');
+
+    for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+      try {
+        const { data } = await axios.get(
+          'https://rsapi.goong.io/Direction',
+          { params, timeout: 10_000 },
+        );
+        this.consecutiveFailures = 0;
+        return data;
+      } catch (error) {
+        lastError = error;
+
+        const retryable =
+          axios.isAxiosError(error) &&
+          (!error.response ||
+            error.response.status >= 500 ||
+            error.response.status === 429);
+        const hasNextAttempt = attempt + 1 < MAX_TRIES;
+
+        if (!retryable || !hasNextAttempt) {
+          break;
+        }
+
+        const statusOrCode =
+          error.response?.status ??
+          error.code ??
+          'network error';
+        this.logger.warn(
+          `Retrying Goong request after attempt ${attempt + 1} (${statusOrCode})`,
+        );
+        await this.sleep(BACKOFF_MS[attempt]);
+      }
+    }
+
+    this.recordFailure();
+    throw lastError;
+  }
+
+  private recordFailure(): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures < BREAKER_THRESHOLD) return;
+
+    this.openUntil = Date.now() + BREAKER_OPEN_MS;
+    this.consecutiveFailures = 0;
+    this.logger.warn(
+      `Goong circuit opened for ${BREAKER_OPEN_MS}ms after consecutive failures`,
+    );
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private async leg(
     from: LatLng,
     to: LatLng,
   ): Promise<{ coordinates: [number, number][]; durationS: number }> {
     const key = this.config.get<string>('directions.goongApiKey');
-    const { data } = await axios.get('https://rsapi.goong.io/Direction', {
-      params: {
-        origin: `${from.lat},${from.lng}`,
-        destination: `${to.lat},${to.lng}`,
-        vehicle: 'car',
-        api_key: key,
-      },
-      timeout: 10_000,
+    const data = await this.fetchDirection({
+      origin: `${from.lat},${from.lng}`,
+      destination: `${to.lat},${to.lng}`,
+      vehicle: 'car',
+      api_key: key ?? '',
     });
     const route = data?.routes?.[0];
     if (!route) throw new Error('Goong returned no route');
