@@ -1,6 +1,6 @@
-import { ConfigService } from '@nestjs/config';
-import type IORedis from 'ioredis';
-import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
+import { ConfigService } from "@nestjs/config";
+import type IORedis from "ioredis";
+import { DirectionsProvider, LatLng, RouteResult } from "./directions.provider";
 
 /**
  * Caching decorator for any DirectionsProvider. Route geometry between two fixed
@@ -20,19 +20,34 @@ export class CachedDirectionsService implements DirectionsProvider {
     private readonly redis: IORedis,
     config: ConfigService,
   ) {
-    this.precision = config.get<number>('directions.cachePrecision') ?? 4;
-    this.ttl = config.get<number>('directions.cacheTtlS') ?? 2_592_000; // 30 days
+    this.precision = config.get<number>("directions.cachePrecision") ?? 4;
+    this.ttl = config.get<number>("directions.cacheTtlS") ?? 2_592_000; // 30 days
   }
 
-  static key(origin: LatLng, dest: LatLng, precision: number, waypoints: LatLng[] = []): string {
+  static key(
+    origin: LatLng,
+    dest: LatLng,
+    precision: number,
+    waypoints: LatLng[] = [],
+  ): string {
     const r = (n: number) => n.toFixed(precision);
     const pt = (p: LatLng) => `${r(p.lat)},${r(p.lng)}`;
-    const via = waypoints.length > 0 ? `:via:${waypoints.map(pt).join('|')}` : '';
-    return `dir:${pt(origin)}:${pt(dest)}${via}`;
+    const via =
+      waypoints.length > 0 ? `:via:${waypoints.map(pt).join("|")}` : "";
+    return `dir:v2:car:${pt(origin)}:${pt(dest)}${via}`;
   }
 
-  async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
-    const key = CachedDirectionsService.key(origin, dest, this.precision, waypoints);
+  async route(
+    origin: LatLng,
+    dest: LatLng,
+    waypoints: LatLng[] = [],
+  ): Promise<RouteResult> {
+    const key = CachedDirectionsService.key(
+      origin,
+      dest,
+      this.precision,
+      waypoints,
+    );
 
     try {
       const cached = await this.redis.get(key);
@@ -44,7 +59,7 @@ export class CachedDirectionsService implements DirectionsProvider {
     const result = await this.inner.route(origin, dest, waypoints);
 
     try {
-      await this.redis.set(key, JSON.stringify(result), 'EX', this.ttl);
+      await this.redis.set(key, JSON.stringify(result), "EX", this.ttl);
     } catch {
       // cache write failed — non-fatal
     }

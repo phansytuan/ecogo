@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
+import { Injectable } from "@nestjs/common";
+import { DirectionsProvider, LatLng, RouteResult } from "./directions.provider";
 
 /**
  * Offline provider for dev/tests. Builds a straight polyline through any
@@ -8,7 +8,11 @@ import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
  */
 @Injectable()
 export class FakeDirectionsService implements DirectionsProvider {
-  async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
+  async route(
+    origin: LatLng,
+    dest: LatLng,
+    waypoints: LatLng[] = [],
+  ): Promise<RouteResult> {
     const points = [origin, ...waypoints, dest];
     const legDurationsS: number[] = [];
     for (let i = 1; i < points.length; i++) {
@@ -17,8 +21,12 @@ export class FakeDirectionsService implements DirectionsProvider {
     }
     return {
       coordinates: points.map((p) => [p.lng, p.lat] as [number, number]),
+      distanceM: Math.round(
+        (legDurationsS.reduce((a, b) => a + b, 0) * 50) / 3.6,
+      ),
       durationS: legDurationsS.reduce((a, b) => a + b, 0),
       legDurationsS,
+      provider: "fake",
     };
   }
 }

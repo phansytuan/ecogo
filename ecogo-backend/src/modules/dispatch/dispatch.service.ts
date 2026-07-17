@@ -1,9 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatabaseService } from '../../database/database.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { MatchingService } from '../matching/matching.service';
-import { AssignmentService } from '../matching/assignment.service';
-import { MatchRequestDto } from '../matching/matching.dto';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { DatabaseService } from "../../database/database.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
+import { MatchingService } from "../matching/matching.service";
+import { AssignmentService } from "../matching/assignment.service";
+import { MatchRequestDto } from "../matching/matching.dto";
 
 @Injectable()
 export class DispatchService {
@@ -46,7 +50,8 @@ export class DispatchService {
        FROM bookings WHERE id = $1 AND status IN ('pending','no_match','processing')`,
       [bookingId],
     );
-    if (!row) throw new NotFoundException('Request not found or already handled');
+    if (!row)
+      throw new NotFoundException("Request not found or already handled");
     const req: MatchRequestDto = {
       pickup: { lat: row.p_lat, lng: row.p_lng },
       dropoff: { lat: row.d_lat, lng: row.d_lng },
@@ -57,7 +62,7 @@ export class DispatchService {
         : undefined,
       seats: row.seats,
     };
-    return this.matching.search(req, 'relaxed');
+    return this.matching.search(req, "relaxed");
   }
 
   /**
@@ -73,8 +78,9 @@ export class DispatchService {
        RETURNING id, claimed_by, claimed_at, status`,
       [bookingId, dispatcherId],
     );
-    if (!claimed) throw new ConflictException('Request already claimed or handled');
-    this.realtime.emitToDispatch('request.processing', claimed);
+    if (!claimed)
+      throw new ConflictException("Request already claimed or handled");
+    this.realtime.emitToDispatch("request.processing", claimed);
     return claimed;
   }
 
@@ -86,14 +92,20 @@ export class DispatchService {
        RETURNING id, status`,
       [bookingId, dispatcherId],
     );
-    if (!released) throw new ConflictException('Not your claim, or already handled');
-    this.realtime.emitToDispatch('request.released', released);
+    if (!released)
+      throw new ConflictException("Not your claim, or already handled");
+    this.realtime.emitToDispatch("request.released", released);
     return released;
   }
 
   /** Manual assignment by a dispatcher. */
   assign(bookingId: string, rideId: string, dispatcherId: string) {
-    return this.assignment.assign(bookingId, rideId, 'dispatcher', dispatcherId);
+    return this.assignment.assign(
+      bookingId,
+      rideId,
+      "dispatcher",
+      dispatcherId,
+    );
   }
 
   /**
@@ -117,6 +129,12 @@ export class DispatchService {
               ) AS companions,
               r.id AS ride_id, r.departure_time, r.duration_s, r.distance_m,
               r.origin_label, r.dest_label, r.total_seats, r.available_seats,
+              r.origin_formatted_address, r.destination_formatted_address,
+              r.origin_location_source, r.destination_location_source,
+              r.original_route_distance_meters, r.original_route_duration_seconds,
+              r.route_calculated_at, r.routing_provider, r.route_valid,
+              ST_AsGeoJSON(r.route) AS original_route_geometry,
+              COALESCE((SELECT json_agg(json_build_object('position',w.position,'formattedAddress',w.formatted_address,'latitude',w.latitude,'longitude',w.longitude,'locationSource',w.location_source) ORDER BY w.position) FROM ride_waypoints w WHERE w.ride_id=r.id),'[]'::json) AS waypoints,
               r.status AS ride_status,
               dr.id AS driver_id, dr.full_name AS driver_name, dr.phone AS driver_phone,
               v.plate, v.type AS vehicle_type, v.seats AS vehicle_seats
@@ -127,7 +145,8 @@ export class DispatchService {
        WHERE b.id = $1`,
       [bookingId],
     );
-    if (!row) throw new NotFoundException('Request has not been assigned to a trip');
+    if (!row)
+      throw new NotFoundException("Request has not been assigned to a trip");
 
     const dep = new Date(row.departure_time).getTime();
     const etaAt = (fraction: number) =>
@@ -144,7 +163,22 @@ export class DispatchService {
         departureTime: row.departure_time,
         origin: row.origin_label,
         dest: row.dest_label,
-        distanceKm: row.distance_m == null ? null : Number(row.distance_m) / 1000,
+        originAddress: row.origin_formatted_address,
+        destinationAddress: row.destination_formatted_address,
+        originLocationSource: row.origin_location_source,
+        destinationLocationSource: row.destination_location_source,
+        waypoints: row.waypoints,
+        originalRouteDistanceMeters: row.original_route_distance_meters,
+        originalRouteDurationSeconds: row.original_route_duration_seconds,
+        originalRouteGeometry:
+          row.original_route_geometry == null
+            ? null
+            : JSON.parse(row.original_route_geometry),
+        routeCalculatedAt: row.route_calculated_at,
+        routingProvider: row.routing_provider,
+        routeValid: row.route_valid,
+        distanceKm:
+          row.distance_m == null ? null : Number(row.distance_m) / 1000,
         totalSeats: row.total_seats,
         availableSeats: row.available_seats,
       },
@@ -168,10 +202,13 @@ export class DispatchService {
         fare: row.fare == null ? null : Number(row.fare),
         // Passenger travel distance (fare basis) vs driver detour (matching basis).
         routeDistanceKm:
-          row.route_distance_m == null ? null : Number(row.route_distance_m) / 1000,
+          row.route_distance_m == null
+            ? null
+            : Number(row.route_distance_m) / 1000,
         detourKm: row.detour_m == null ? null : Number(row.detour_m) / 1000,
         detourPct: row.detour_pct == null ? null : Number(row.detour_pct),
-        extraDurationS: row.extra_duration_s == null ? null : Number(row.extra_duration_s),
+        extraDurationS:
+          row.extra_duration_s == null ? null : Number(row.extra_duration_s),
         pickupEta: etaAt(row.fp),
         dropoffEta: etaAt(row.fd),
       },

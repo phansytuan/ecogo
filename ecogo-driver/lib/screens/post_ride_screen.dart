@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'vehicle_screen.dart';
+import 'address_picker_screen.dart';
 
 class PostRideScreen extends StatefulWidget {
   const PostRideScreen({super.key});
@@ -14,8 +15,8 @@ class PostRideScreen extends StatefulWidget {
 class _PostRideScreenState extends State<PostRideScreen> {
   late Future<List<Vehicle>> _vehicles;
   Vehicle? _vehicle;
-  Stop _origin = kStops.first;
-  Stop _dest = kStops.last;
+  Stop? _origin;
+  Stop? _dest;
   DateTime _departure = DateTime.now().add(const Duration(hours: 2));
   int _seats = 4;
   final _price = TextEditingController();
@@ -29,7 +30,6 @@ class _PostRideScreenState extends State<PostRideScreen> {
   void initState() {
     super.initState();
     _vehicles = context.read<AppState>().vehicles.mine();
-    _fetchQuote();
   }
 
   @override
@@ -55,7 +55,9 @@ class _PostRideScreenState extends State<PostRideScreen> {
     final request = ++_quoteRequest;
     final origin = _origin;
     final dest = _dest;
-    if (origin.label == dest.label) {
+    if (origin == null ||
+        dest == null ||
+        (origin.lat == dest.lat && origin.lng == dest.lng)) {
       setState(() {
         _quote = null;
         _quoting = false;
@@ -109,7 +111,16 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Chọn xe trước', error: true);
       return;
     }
-    if (_origin.label == _dest.label) {
+    if (_origin == null || _dest == null) {
+      showSnack(context, 'Chọn đầy đủ điểm đi và điểm đến', error: true);
+      return;
+    }
+    if (_quote == null || _quoting) {
+      showSnack(context, 'Cần tính tuyến đường hợp lệ trước khi đăng',
+          error: true);
+      return;
+    }
+    if (_origin!.lat == _dest!.lat && _origin!.lng == _dest!.lng) {
       showSnack(context, 'Điểm đi/đến phải khác nhau', error: true);
       return;
     }
@@ -118,12 +129,27 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Giờ khởi hành đã quá hạn — chọn lại', error: true);
       return;
     }
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Xác nhận tuyến đường'),
+                content: Text(
+                    '${_origin!.label}\n→ ${_dest!.label}\n\n${_quote!.km.toStringAsFixed(1)} km · ${(_quote!.durationS / 60).round()} phút\n$_seats ghế · ${DateFormat('dd/MM HH:mm').format(_departure)}'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Sửa lại')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Xác nhận đăng'))
+                ]));
+    if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
       await context.read<AppState>().rides.post(
             vehicleId: _vehicle!.id,
-            origin: _origin,
-            dest: _dest,
+            origin: _origin!,
+            dest: _dest!,
             departureTime: _departure,
             totalSeats: _seats,
             pricePerSeat: int.tryParse(_price.text.trim()),
@@ -333,19 +359,41 @@ class _PostRideScreenState extends State<PostRideScreen> {
     );
   }
 
-  Widget _stop(String label, Stop value, ValueChanged<Stop> onChanged) {
-    return InputDecorator(
-      decoration: InputDecoration(labelText: label),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<Stop>(
-          value: value,
-          isExpanded: true,
-          items: kStops
-              .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
-              .toList(),
-          onChanged: _busy ? null : (s) => onChanged(s!),
-        ),
-      ),
-    );
+  Widget _stop(String label, Stop? value, ValueChanged<Stop> onChanged) {
+    return ListTile(
+        shape: RoundedRectangleBorder(
+            side: BorderSide(color: Colors.black.withValues(alpha: .12)),
+            borderRadius: BorderRadius.circular(12)),
+        title: Text(label),
+        subtitle: Text(value?.label ?? 'Chọn địa chỉ chi tiết'),
+        leading: Icon(
+            value == null ? Icons.location_on_outlined : Icons.location_on),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (value != null)
+            IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: _busy
+                    ? null
+                    : () {
+                        setState(() {
+                          if (label == 'Điểm đi')
+                            _origin = null;
+                          else
+                            _dest = null;
+                          _quote = null;
+                        });
+                      }),
+          const Icon(Icons.chevron_right)
+        ]),
+        onTap: _busy
+            ? null
+            : () async {
+                final s = await Navigator.push<Stop>(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            AddressPickerScreen(title: 'Chọn $label')));
+                if (s != null && mounted) onChanged(s);
+              });
   }
 }

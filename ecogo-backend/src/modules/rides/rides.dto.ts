@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Type } from "class-transformer";
 import {
   IsBoolean,
   IsInt,
@@ -11,9 +11,10 @@ import {
   Min,
   ValidateNested,
   IsArray,
+  IsEnum,
   ArrayMaxSize,
   MaxLength,
-} from 'class-validator';
+} from "class-validator";
 
 export class GeoPointDto {
   @IsLatitude()
@@ -31,6 +32,10 @@ export class GeoPointDto {
   @IsString()
   @MaxLength(512)
   placeId?: string;
+
+  @IsOptional()
+  @IsEnum(["MANUAL_ADDRESS", "CURRENT_GPS", "MAP_PIN"])
+  locationSource?: "MANUAL_ADDRESS" | "CURRENT_GPS" | "MAP_PIN";
 }
 
 export class QuoteDto {
@@ -41,6 +46,13 @@ export class QuoteDto {
   @ValidateNested()
   @Type(() => GeoPointDto)
   dest!: GeoPointDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => GeoPointDto)
+  waypoints?: GeoPointDto[];
 }
 
 export class CreateRideDto {
@@ -54,6 +66,13 @@ export class CreateRideDto {
   @ValidateNested()
   @Type(() => GeoPointDto)
   dest!: GeoPointDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => GeoPointDto)
+  waypoints?: GeoPointDto[];
 
   @IsISO8601()
   departureTime!: string;

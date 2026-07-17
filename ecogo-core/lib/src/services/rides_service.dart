@@ -22,8 +22,8 @@ class RidesService {
   }) async {
     final r = await api.post('/rides', {
       'vehicleId': vehicleId,
-      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label},
-      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label},
+      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label, 'placeId': origin.placeId, 'locationSource': origin.locationSource.apiValue},
+      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label, 'placeId': dest.placeId, 'locationSource': dest.locationSource.apiValue},
       'departureTime': departureTime.toUtc().toIso8601String(),
       'totalSeats': totalSeats,
       'pricePerSeat': pricePerSeat,
@@ -53,8 +53,8 @@ class RidesService {
   /// Suggested distance/price for the posting form (before any booking).
   Future<RouteQuote> quote({required Stop origin, required Stop dest}) async {
     final r = await api.post('/rides/quote', {
-      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label},
-      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label},
+      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label, 'placeId': origin.placeId, 'locationSource': origin.locationSource.apiValue},
+      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label, 'placeId': dest.placeId, 'locationSource': dest.locationSource.apiValue},
     });
     return RouteQuote.fromJson(r as Map<String, dynamic>);
   }
