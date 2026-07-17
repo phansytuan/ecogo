@@ -152,7 +152,7 @@ export class RealtimeGateway implements OnGatewayConnection {
          SELECT 1 FROM rides
          WHERE id = $1 AND driver_id = $2 AND status = ANY($3::text[])
        ) AS allowed`,
-      [body.rideId, user.id, ["open", "full"]],
+      [body.rideId, user.id, ["open", "full", "ongoing"]],
     );
     if (!access?.allowed) return { ok: false, error: "forbidden" };
     const loc = {

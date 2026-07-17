@@ -90,7 +90,7 @@ describe("RealtimeGateway authorization", () => {
     expect(db.one).toHaveBeenCalledWith(expect.stringContaining("status = ANY"), [
       RIDE_ID,
       USER_ID,
-      ["open", "full"],
+      ["open", "full", "ongoing"],
     ]);
 
     expect(presence.setLocation).toHaveBeenCalledWith(

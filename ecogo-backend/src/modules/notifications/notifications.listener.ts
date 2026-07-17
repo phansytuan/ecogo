@@ -36,6 +36,12 @@ interface RideRequiresReviewEvent {
   driverId: string;
 }
 
+interface RideStartedEvent {
+  rideId: string;
+  driverId: string;
+  bookings: { id: string; passengerId: string }[];
+}
+
 @Injectable()
 export class NotificationsListener {
   constructor(private readonly notifications: NotificationsService) {}
@@ -110,5 +116,17 @@ export class NotificationsListener {
       'Chuyến của bạn đã quá giờ dự kiến. Mở app để bấm hoàn thành hoặc liên hệ điều phối.',
       { rideId: e.rideId },
     );
+  }
+
+  @OnEvent('ride.started')
+  async onRideStarted(e: RideStartedEvent) {
+    for (const booking of e.bookings) {
+      await this.notifications.pushToUser(
+        booking.passengerId,
+        'Chuyến đã bắt đầu',
+        'Tài xế đã bắt đầu chuyến của bạn. Chuẩn bị ra điểm đón nhé!',
+        { bookingId: booking.id },
+      );
+    }
   }
 }
