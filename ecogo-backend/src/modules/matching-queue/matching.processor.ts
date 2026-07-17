@@ -14,17 +14,46 @@ export class MatchingProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly assignment: AssignmentService,
   ) {}
 
+  async process(job: Job): Promise<void> {
+    if (job.name !== 'reattempt') return;
+    const { bookingId } = job.data as { bookingId: string };
+
+    try {
+      const matched = await this.assignment.tryAutoMatch(bookingId);
+      if (!matched) {
+        await this.assignment.markNoMatch(bookingId);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Re-match for booking ${bookingId} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      const isFinalAttempt =
+        job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      if (isFinalAttempt) {
+        try {
+          await this.assignment.markNoMatch(bookingId);
+        } catch (escalationError) {
+          this.logger.error(
+            `Failed to escalate booking ${bookingId} to no_match: ${
+              escalationError instanceof Error
+                ? escalationError.message
+                : String(escalationError)
+            }`,
+          );
+        }
+      }
+
+      throw error;
+    }
+  }
+
   onModuleInit() {
     this.worker = new Worker(
       QUEUE_NAME,
-      async (job: Job) => {
-        if (job.name !== 'reattempt') return;
-        const { bookingId } = job.data as { bookingId: string };
-        const matched = await this.assignment.tryAutoMatch(bookingId);
-        if (!matched) {
-          await this.assignment.markNoMatch(bookingId);
-        }
-      },
+      this.process.bind(this),
       { connection: this.conn },
     );
     this.worker.on('failed', (job, err) =>

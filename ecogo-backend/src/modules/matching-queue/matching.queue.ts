@@ -4,6 +4,8 @@ import { Queue } from 'bullmq';
 export const MATCHING_QUEUE = 'MATCHING_QUEUE';
 export const QUEUE_NAME = 'matching';
 export const REATTEMPT_DELAY_MS = 15 * 60 * 1000; // the brief's 15-minute SLA
+export const REATTEMPT_ATTEMPTS = 3;
+export const REATTEMPT_BACKOFF_MS = 30_000;
 
 @Injectable()
 export class MatchingQueueProducer implements OnModuleDestroy {
@@ -17,8 +19,10 @@ export class MatchingQueueProducer implements OnModuleDestroy {
       {
         delay: REATTEMPT_DELAY_MS,
         jobId: `reattempt-${bookingId}`,
+        attempts: REATTEMPT_ATTEMPTS,
+        backoff: { type: 'exponential', delay: REATTEMPT_BACKOFF_MS },
         removeOnComplete: true,
-        removeOnFail: true,
+        removeOnFail: { count: 100 },
       },
     );
   }
