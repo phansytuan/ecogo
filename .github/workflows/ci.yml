@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ecogo-backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ecogo-backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ecogo-dispatch
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ecogo-dispatch/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: stable
+          cache: true
+
+      - name: Install ecogo_core dependencies
+        run: flutter pub get
+        working-directory: ecogo-core
+      - name: Analyze ecogo_core
+        run: flutter analyze
+        working-directory: ecogo-core
+      - name: Test ecogo_core
+        run: flutter test
+        working-directory: ecogo-core
+      - name: Install ecogo_driver dependencies
+        run: flutter pub get
+        working-directory: ecogo-driver
+      - name: Analyze ecogo_driver
+        run: flutter analyze
+        working-directory: ecogo-driver
+      - name: Install ecogo_passenger dependencies
+        run: flutter pub get
+        working-directory: ecogo-passenger
+      - name: Analyze ecogo_passenger
+        run: flutter analyze
+        working-directory: ecogo-passenger
