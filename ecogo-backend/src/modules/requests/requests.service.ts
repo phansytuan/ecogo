@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
-import { AssignmentService } from '../matching/assignment.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { MatchingQueueProducer } from '../matching-queue/matching.queue';
 import { CreateRequestDto } from './requests.dto';
 
@@ -9,13 +7,19 @@ import { CreateRequestDto } from './requests.dto';
 export class RequestsService {
   constructor(
     private readonly db: DatabaseService,
-    private readonly assignment: AssignmentService,
     private readonly queue: MatchingQueueProducer,
-    private readonly realtime: RealtimeGateway,
   ) {}
 
   async create(passengerId: string, dto: CreateRequestDto) {
-    const created = await this.db.one<{ id: string }>(
+    const created = await this.db.one<{
+      id: string;
+      ride_id: null;
+      status: 'pending';
+      seats: number;
+      fare: null;
+      matched_by: null;
+      created_at: string;
+    }>(
       `INSERT INTO bookings
          (passenger_id, pickup, dropoff, pickup_label, dropoff_label,
           pickup_address, dropoff_address, pickup_place_id, dropoff_place_id,
@@ -24,7 +28,7 @@ export class RequestsService {
                ST_SetSRID(ST_MakePoint($2,$3),4326),
                ST_SetSRID(ST_MakePoint($4,$5),4326),
                $6,$7,$8,$9,$10,$11,$12,'pending',$13,$14,$15)
-       RETURNING id`,
+       RETURNING id, ride_id, status, seats, fare, matched_by, created_at`,
       [
         passengerId,
         dto.pickup.lng,
@@ -45,19 +49,12 @@ export class RequestsService {
     );
     const bookingId = created!.id;
 
-    // Try once immediately; if nothing fits, schedule the 15-min re-match and
-    // let dispatch see the pending request right away.
-    const matched = await this.assignment.tryAutoMatch(bookingId);
-    if (!matched) {
-      await this.queue.scheduleReattempt(bookingId);
-      this.realtime.emitToDispatch('request.pending', { id: bookingId });
-    }
+    // Matching may require many routing-provider calls. Run the first attempt
+    // outside the HTTP request; the worker schedules the delayed reattempt and
+    // dispatch escalation only when this first attempt finds no ride.
+    await this.queue.scheduleFirstMatch(bookingId);
 
-    return this.db.one(
-      `SELECT id, ride_id, status, seats, fare, matched_by, created_at
-       FROM bookings WHERE id = $1`,
-      [bookingId],
-    );
+    return created;
   }
 
   listForPassenger(passengerId: string) {
