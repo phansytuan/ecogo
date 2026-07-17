@@ -257,3 +257,77 @@ button:disabled { cursor: default; }
 .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; margin: 0 0 8px; }
 .kv dt { font-size: 12px; color: #6b7a70; }
 .kv dd { margin: 0; font-size: 13px; font-weight: 600; color: #1B2B22; }
+
+/* Ride review queue */
+.reviews-banner {
+  margin: 12px 16px 0;
+  padding: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 10px;
+  background: rgba(120, 74, 8, 0.2);
+}
+
+.reviews-banner h2 {
+  margin: 0 0 10px;
+  color: #fbbf24;
+  font-size: 15px;
+}
+
+.reviews-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.reviews-card {
+  flex: 0 0 330px;
+  padding: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 8px;
+  background: #18202b;
+}
+
+.reviews-route {
+  display: flex;
+  gap: 8px;
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.reviews-meta,
+.reviews-stats {
+  margin-top: 6px;
+  color: #aeb9c8;
+  font-size: 13px;
+}
+
+.reviews-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reviews-btn {
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.reviews-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.reviews-btn.complete {
+  border: 1px solid #16a34a;
+  background: #16a34a;
+  color: #fff;
+}
+
+.reviews-btn.cancel {
+  border: 1px solid #ef4444;
+  background: transparent;
+  color: #f87171;
+}

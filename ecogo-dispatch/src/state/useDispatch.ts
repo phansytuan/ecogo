@@ -4,19 +4,22 @@ import {
   claimRequest,
   getCandidates,
   getQueue,
+  getReviews,
   getTrip,
   releaseRequest,
+  resolveRide,
 } from '../api/dispatch';
 import { createSocket } from '../realtime/socket';
 import { getToken, subscribeToken } from '../auth/token';
 import { useToast } from '../ui/toast';
-import { Candidate, DriverLocation, QueueItem, TripInfo } from '../api/types';
+import { Candidate, DriverLocation, QueueItem, ReviewRide, TripInfo } from '../api/types';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
 
 export function useDispatch() {
   const toast = useToast();
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [reviews, setReviews] = useState<ReviewRide[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [drivers, setDrivers] = useState<Record<string, DriverLocation>>({});
@@ -25,6 +28,7 @@ export function useDispatch() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyReviewId, setBusyReviewId] = useState<string | null>(null);
   const [trip, setTrip] = useState<TripInfo | null>(null);
 
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,6 +52,14 @@ export function useDispatch() {
     }
   }, []);
 
+  const loadReviews = useCallback(async () => {
+    try {
+      setReviews(await getReviews());
+    } catch {
+      // Review refreshes stay silent; websocket reminders retry them.
+    }
+  }, []);
+
   const debouncedRefresh = useCallback(() => {
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => refresh(true), 300);
@@ -55,7 +67,8 @@ export function useDispatch() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    loadReviews();
+  }, [loadReviews, refresh]);
 
   useEffect(() => subscribeToken(setSocketToken), []);
 
@@ -87,13 +100,16 @@ export function useDispatch() {
     s.on('booking.matched', debouncedRefresh);
     s.on('request.processing', debouncedRefresh);
     s.on('request.released', debouncedRefresh);
+    s.on('ride.requires_review', loadReviews);
+    s.on('ride.requires_review.reminder', loadReviews);
+    s.on('ride.review.resolved', loadReviews);
     s.on('driver:location', (loc: DriverLocation) =>
       setDrivers((d) => ({ ...d, [loc.driverId]: loc })),
     );
     return () => {
       s.disconnect();
     };
-  }, [debouncedRefresh, loadingQueue, socketToken]);
+  }, [debouncedRefresh, loadReviews, loadingQueue, socketToken]);
 
   const select = useCallback(
     async (id: string) => {
@@ -193,10 +209,37 @@ export function useDispatch() {
     [queue, refresh, toast],
   );
 
+  const resolveReview = useCallback(
+    async (
+      rideId: string,
+      outcome: 'completed' | 'cancelled',
+      reason: string,
+    ) => {
+      setBusyReviewId(rideId);
+      const prev = reviews;
+      setReviews((current) => current.filter((review) => review.id !== rideId));
+      try {
+        await resolveRide(rideId, outcome, reason);
+        toast(
+          'success',
+          outcome === 'completed'
+            ? 'Đã xác nhận hoàn thành chuyến'
+            : 'Đã huỷ chuyến',
+        );
+      } catch (e) {
+        setReviews(prev);
+        toast('error', e instanceof Error ? e.message : 'Xử lý chuyến thất bại');
+      } finally {
+        setBusyReviewId(null);
+      }
+    },
+    [reviews, toast],
+  );
+
   const selected = queue.find((q) => q.id === selectedId) ?? null;
   return {
-    queue, selected, selectedId, candidates, drivers, status, trip,
-    loadingQueue, loadingCandidates, queueError, busyId,
-    select, claim, assign, release, refresh, clearTrip: () => setTrip(null),
+    queue, reviews, selected, selectedId, candidates, drivers, status, trip,
+    loadingQueue, loadingCandidates, queueError, busyId, busyReviewId,
+    select, claim, assign, release, refresh, resolveReview, clearTrip: () => setTrip(null),
   };
 }

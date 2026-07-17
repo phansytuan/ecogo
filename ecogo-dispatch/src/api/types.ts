@@ -110,3 +110,18 @@ export interface DriverLocation {
   lng: number;
   at: number;
 }
+
+// Dispatcher ride-review queue model.
+export interface ReviewRide {
+  id: string;
+  driver_id: string;
+  driver_name: string | null;
+  driver_phone: string | null;
+  origin_label: string | null;
+  dest_label: string | null;
+  departure_time: string;
+  duration_s: number;
+  active_bookings: number;
+  total_seats: number;
+  total_fare: number;
+}
