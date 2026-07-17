@@ -24,6 +24,8 @@ import { canAcceptCharter, isCharterAvailable } from './charter';
 import { checkDeparture } from './departure';
 import { seatLayout } from './seat-layout';
 
+const RIDE_START_EARLY_MIN = 30;
+
 @Injectable()
 export class RidesService {
   constructor(
@@ -598,6 +600,76 @@ export class RidesService {
       new Date(row.departure_time).getTime() + Number(row.fp) * row.duration_s * 1000,
     ).toISOString();
     return { at, label: row.pickup_label, lat: row.lat, lng: row.lng };
+  }
+
+  /**
+   * Driver presses "start trip"; passengers and dispatch see it live. The
+   * gateway permits GPS updates while the ride remains ongoing.
+   */
+  async start(rideId: string, driverId: string) {
+    const result = await this.db.tx(async (client) => {
+      const ride = (
+        await client.query<{
+          id: string;
+          driver_id: string;
+          status: string;
+          departure_time: string | Date;
+        }>(
+          `SELECT id, driver_id, status, departure_time
+           FROM rides
+           WHERE id = $1
+           FOR UPDATE`,
+          [rideId],
+        )
+      ).rows[0];
+
+      if (!ride) throw new NotFoundException('Ride not found');
+      if (ride.driver_id !== driverId) {
+        throw new ForbiddenException('Not your ride');
+      }
+      if (!['open', 'full'].includes(ride.status)) {
+        throw new ConflictException(
+          `Ride cannot start (status: ${ride.status})`,
+        );
+      }
+
+      const earliestStart =
+        new Date(ride.departure_time).getTime() -
+        RIDE_START_EARLY_MIN * 60 * 1000;
+      if (Date.now() < earliestStart) {
+        throw new ConflictException('Too early to start this ride');
+      }
+
+      const bookings = (
+        await client.query<{ id: string; passenger_id: string }>(
+          `UPDATE bookings SET status = 'ongoing'
+           WHERE ride_id = $1
+             AND status IN ('matched','confirmed')
+           RETURNING id, passenger_id`,
+          [rideId],
+        )
+      ).rows.map((booking) => ({
+        id: booking.id,
+        passengerId: booking.passenger_id,
+      }));
+
+      await client.query(
+        `UPDATE rides SET status = 'ongoing' WHERE id = $1`,
+        [rideId],
+      );
+
+      return {
+        rideId,
+        driverId,
+        status: 'ongoing' as const,
+        bookings,
+      };
+    });
+
+    this.realtime.emitToRide(rideId, 'ride.started', result);
+    this.realtime.emitToDispatch('ride.started', result);
+    this.events.emit('ride.started', result);
+    return result;
   }
 
   /**

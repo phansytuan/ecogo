@@ -102,6 +102,12 @@ export class RidesController {
     return this.rides.cancel(id, user.id);
   }
 
+  @Post(':id/start')
+  @UseGuards(JwtAuthGuard)
+  start(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.rides.start(id, user.id);
+  }
+
   @Post(':id/complete')
   @UseGuards(JwtAuthGuard)
   complete(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
