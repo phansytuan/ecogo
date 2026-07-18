@@ -65,6 +65,7 @@ class ApiClient {
 
   Future<dynamic> get(String path) => _send('GET', path);
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) => _send('POST', path, body);
+  Future<dynamic> patch(String path, [Map<String, dynamic>? body]) => _send('PATCH', path, body);
 
   static const _timeout = Duration(seconds: 20);
 
@@ -97,6 +98,10 @@ class ApiClient {
     final client = httpClient;
     if (method == 'GET') {
       return client?.get(uri, headers: headers) ?? http.get(uri, headers: headers);
+    }
+    if (method == 'PATCH') {
+      return client?.patch(uri, headers: headers, body: body == null ? null : jsonEncode(body)) ??
+          http.patch(uri, headers: headers, body: body == null ? null : jsonEncode(body));
     }
     return client?.post(uri, headers: headers, body: body == null ? null : jsonEncode(body)) ??
         http.post(uri, headers: headers, body: body == null ? null : jsonEncode(body));

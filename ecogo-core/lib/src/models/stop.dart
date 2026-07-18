@@ -30,6 +30,15 @@ extension LocationSourceApi on LocationSource {
   };
 }
 
+/// GeoPointDto payload shape shared by every service that sends a [Stop].
+Map<String, dynamic> stopToJson(Stop stop) => {
+      'lat': stop.lat,
+      'lng': stop.lng,
+      'label': stop.label,
+      if (stop.placeId != null) 'placeId': stop.placeId,
+      'locationSource': stop.locationSource.apiValue,
+    };
+
 /// Corridor stops for the MVP route (Hà Tĩnh ... Bắc Giang).
 ///
 /// Coordinates are pickup/drop points that sit ON the shared inter-provincial
