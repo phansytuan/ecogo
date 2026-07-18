@@ -42,6 +42,12 @@ export default () => ({
     rideGraceHours: parseInt(process.env.MAINTENANCE_RIDE_GRACE_HOURS ?? '2', 10),
     requestGraceMin: parseInt(process.env.MAINTENANCE_REQUEST_GRACE_MIN ?? '30', 10),
   },
+  referrals: {
+    claimWindowDays: parseInt(
+      process.env.REFERRAL_CLAIM_WINDOW_DAYS ?? '14',
+      10,
+    ),
+  },
   fcm: {
     projectId: process.env.FCM_PROJECT_ID ?? '',
     clientEmail: process.env.FCM_CLIENT_EMAIL ?? '',
