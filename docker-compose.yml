@@ -29,7 +29,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev-secret-change-me
       JWT_ACCESS_EXPIRES_IN: "2h"
-      OTP_PROVIDER: fake
+      OTP_PROVIDER: ${OTP_PROVIDER:-fake}
       # Directions provider is driven by a root .env (git-ignored). Defaults to
       # the offline straight-line 'fake' provider. Set DIRECTIONS_PROVIDER=goong
       # and GOONG_API_KEY=<key> in ./.env to route along real roads — required

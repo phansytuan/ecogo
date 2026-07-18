@@ -12,6 +12,13 @@ export default () => ({
     refreshDays: parseInt(process.env.JWT_REFRESH_DAYS ?? '30', 10),
   },
   otpProvider: process.env.OTP_PROVIDER ?? 'fake',
+  esms: {
+    apiKey: process.env.ESMS_API_KEY ?? '',
+    secretKey: process.env.ESMS_SECRET_KEY ?? '',
+    brandname: process.env.ESMS_BRANDNAME ?? '',
+    smsType: process.env.ESMS_SMS_TYPE ?? '2',
+    sandbox: process.env.ESMS_SANDBOX === 'true',
+  },
   directions: {
     provider: process.env.DIRECTIONS_PROVIDER ?? 'fake',
     goongApiKey: process.env.GOONG_API_KEY ?? '',

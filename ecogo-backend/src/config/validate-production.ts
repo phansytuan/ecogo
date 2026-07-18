@@ -23,6 +23,15 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv): void {
     violations.push('OTP_PROVIDER must be set and must not be "fake".');
   }
 
+  if (
+    env.OTP_PROVIDER === 'esms' &&
+    (!env.ESMS_API_KEY?.trim() || !env.ESMS_SECRET_KEY?.trim())
+  ) {
+    violations.push(
+      'ESMS_API_KEY and ESMS_SECRET_KEY are required when OTP_PROVIDER=esms.',
+    );
+  }
+
   if (!env.DATABASE_URL?.trim()) {
     violations.push('DATABASE_URL is required and must be non-empty.');
   }
