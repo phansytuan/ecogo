@@ -4,14 +4,12 @@ import 'package:ecogo_core/ecogo_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 Future<TokenStore> makeTokens({String? access, String? refresh}) async {
-  SharedPreferences.setMockInitialValues({
-    if (access != null) 'token': access,
-    if (refresh != null) 'refresh': refresh,
-  });
-  return TokenStore(await SharedPreferences.getInstance());
+  final kv = InMemorySecureKV();
+  if (access != null) await kv.write('token', access);
+  if (refresh != null) await kv.write('refresh', refresh);
+  return TokenStore.create(storage: kv);
 }
 
 void main() {

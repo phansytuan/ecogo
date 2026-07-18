@@ -9,7 +9,8 @@ import 'screens/home_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  final app = AppState(prefs);
+  final tokens = await TokenStore.create(legacyPrefs: prefs);
+  final app = AppState(tokens);
 
   // --- Push notifications integration seam ---------------------------------
   // The app is push-ready: once you add firebase_messaging (with native config),
