@@ -14,8 +14,8 @@ class MatchingService {
     int seats = 1,
   }) async {
     final r = await api.post('/matching/search', {
-      'pickup': {'lat': pickup.lat, 'lng': pickup.lng, 'label': pickup.label},
-      'dropoff': {'lat': dropoff.lat, 'lng': dropoff.lng, 'label': dropoff.label},
+      'pickup': stopToJson(pickup),
+      'dropoff': stopToJson(dropoff),
       'windowStart': windowStart.toUtc().toIso8601String(),
       'windowEnd': windowEnd.toUtc().toIso8601String(),
       'seats': seats,
@@ -31,8 +31,10 @@ class MatchingService {
     int seats = 1,
   }) async {
     final r = await api.post('/requests', {
-      'pickup': {'lat': pickup.lat, 'lng': pickup.lng, 'label': pickup.label},
-      'dropoff': {'lat': dropoff.lat, 'lng': dropoff.lng, 'label': dropoff.label},
+      'pickup': stopToJson(pickup),
+      'dropoff': stopToJson(dropoff),
+      if (pickup.label.trim().isNotEmpty) 'pickupAddress': pickup.label.trim(),
+      if (dropoff.label.trim().isNotEmpty) 'dropoffAddress': dropoff.label.trim(),
       'windowStart': windowStart.toUtc().toIso8601String(),
       'windowEnd': windowEnd.toUtc().toIso8601String(),
       'seats': seats,

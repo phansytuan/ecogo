@@ -22,6 +22,11 @@ export default () => ({
     maxBackdateMin: parseInt(process.env.RIDES_MAX_BACKDATE_MIN ?? '60', 10),
     maxAheadDays: parseInt(process.env.RIDES_MAX_AHEAD_DAYS ?? '30', 10),
     requireDriverKyc: process.env.REQUIRE_DRIVER_KYC === 'true',
+    minimumDistanceM: parseInt(process.env.RIDES_MINIMUM_DISTANCE_M ?? '35000', 10),
+    sameLocationToleranceM: parseInt(
+      process.env.RIDES_SAME_LOCATION_TOLERANCE_M ?? '50',
+      10,
+    ),
   },
   matching: {
     // A ride is eligible while matched distance <= original * (1 + ratio).

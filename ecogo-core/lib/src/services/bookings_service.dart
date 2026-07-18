@@ -15,8 +15,8 @@ class BookingsService {
     int seats = 1,
   }) async {
     final r = await api.post('/bookings/quote', {
-      'pickup': {'lat': pickup.lat, 'lng': pickup.lng, 'label': pickup.label},
-      'dropoff': {'lat': dropoff.lat, 'lng': dropoff.lng, 'label': dropoff.label},
+      'pickup': stopToJson(pickup),
+      'dropoff': stopToJson(dropoff),
       'seats': seats,
     });
     return FareQuote.fromJson(r as Map<String, dynamic>);
@@ -34,18 +34,8 @@ class BookingsService {
   }) async {
     final r = await api.post('/bookings', {
       'rideId': rideId,
-      'pickup': {
-        'lat': pickup.lat,
-        'lng': pickup.lng,
-        'label': pickup.label,
-        if (pickup.placeId != null) 'placeId': pickup.placeId,
-      },
-      'dropoff': {
-        'lat': dropoff.lat,
-        'lng': dropoff.lng,
-        'label': dropoff.label,
-        if (dropoff.placeId != null) 'placeId': dropoff.placeId,
-      },
+      'pickup': stopToJson(pickup),
+      'dropoff': stopToJson(dropoff),
       'seats': seats,
       if (pickupAddress != null && pickupAddress.trim().isNotEmpty)
         'pickupAddress': pickupAddress.trim(),

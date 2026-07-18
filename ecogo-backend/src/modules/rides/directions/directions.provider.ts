@@ -8,6 +8,10 @@ export interface RouteResult {
   coordinates: [number, number][];
   /** Total drive time in seconds. */
   durationS: number;
+  /** Provider road distance in metres. */
+  distanceM?: number;
+  encodedPolyline?: string;
+  provider?: string;
   /**
    * Drive time of each leg in seconds. With no waypoints this is [durationS].
    * With N waypoints there are N+1 legs: origin->w1, w1->w2, ..., wN->dest.
@@ -20,7 +24,11 @@ export interface DirectionsProvider {
    * @param waypoints Intermediate stops, in the order they must be visited.
    *                  Used to re-route a ride through its passengers' pickups.
    */
-  route(origin: LatLng, dest: LatLng, waypoints?: LatLng[]): Promise<RouteResult>;
+  route(
+    origin: LatLng,
+    dest: LatLng,
+    waypoints?: LatLng[],
+  ): Promise<RouteResult>;
 }
 
-export const DIRECTIONS_PROVIDER = 'DIRECTIONS_PROVIDER';
+export const DIRECTIONS_PROVIDER = "DIRECTIONS_PROVIDER";

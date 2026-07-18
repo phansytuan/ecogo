@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../../common/current-user.decorator';
 import { RidesService } from './rides.service';
@@ -17,7 +17,15 @@ export class RidesController {
   @Post('quote')
   @UseGuards(JwtAuthGuard)
   quote(@Body() dto: QuoteDto) {
-    return this.rides.quote(dto.origin, dto.dest);
+    return this.rides.quote(dto.origin, dto.dest, dto.waypoints ?? []);
+  }
+
+  @Post('route-preview')
+  @UseGuards(JwtAuthGuard)
+  preview(@Body() dto: QuoteDto) {
+    return this.rides
+      .preview(dto.origin, dto.dest, dto.waypoints ?? [])
+      .then(({ route: _route, ...result }) => result);
   }
 
   @Get('mine')
@@ -30,6 +38,16 @@ export class RidesController {
   @UseGuards(JwtAuthGuard)
   itinerary(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.rides.itinerary(id, user.id);
+  }
+
+  @Patch(':id/route')
+  @UseGuards(JwtAuthGuard)
+  updateRoute(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: QuoteDto,
+  ) {
+    return this.rides.updateRoute(user.id, id, dto);
   }
 
   @Get(':id/route')

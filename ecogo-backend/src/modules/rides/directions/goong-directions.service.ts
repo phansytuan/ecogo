@@ -29,16 +29,23 @@ export class GoongDirectionsService implements DirectionsProvider {
     const points = [origin, ...waypoints, dest];
     const coordinates: [number, number][] = [];
     const legDurationsS: number[] = [];
+    let distanceM = 0;
+    const encoded: string[] = [];
     for (let i = 1; i < points.length; i++) {
       const leg = await this.leg(points[i - 1], points[i]);
       // Drop the duplicated joint vertex between consecutive legs.
       coordinates.push(...(coordinates.length > 0 ? leg.coordinates.slice(1) : leg.coordinates));
       legDurationsS.push(leg.durationS);
+      distanceM += leg.distanceM;
+      encoded.push(leg.encodedPolyline);
     }
     return {
       coordinates,
       durationS: legDurationsS.reduce((a, b) => a + b, 0),
+      distanceM,
       legDurationsS,
+      encodedPolyline: encoded.length === 1 ? encoded[0] : undefined,
+      provider: 'goong',
     };
   }
 
@@ -104,7 +111,12 @@ export class GoongDirectionsService implements DirectionsProvider {
   private async leg(
     from: LatLng,
     to: LatLng,
-  ): Promise<{ coordinates: [number, number][]; durationS: number }> {
+  ): Promise<{
+    coordinates: [number, number][];
+    durationS: number;
+    distanceM: number;
+    encodedPolyline: string;
+  }> {
     const key = this.config.get<string>('directions.goongApiKey');
     const data = await this.fetchDirection({
       origin: `${from.lat},${from.lng}`,
@@ -114,10 +126,18 @@ export class GoongDirectionsService implements DirectionsProvider {
     });
     const route = data?.routes?.[0];
     if (!route) throw new Error('Goong returned no route');
-    const legs: { duration?: { value?: number } }[] = route.legs ?? [];
+    const legs: {
+      duration?: { value?: number };
+      distance?: { value?: number };
+    }[] = route.legs ?? [];
+    if (typeof route.overview_polyline?.points !== 'string') {
+      throw new Error('Goong returned an invalid route');
+    }
     return {
       coordinates: decodePolyline(route.overview_polyline.points),
       durationS: legs.reduce((a, l) => a + (l.duration?.value ?? 0), 0),
+      distanceM: Math.round(legs.reduce((a, l) => a + (l.distance?.value ?? 0), 0)),
+      encodedPolyline: route.overview_polyline.points,
     };
   }
 }

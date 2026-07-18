@@ -1,4 +1,4 @@
-export type RequestStatus = 'pending' | 'no_match' | 'processing';
+export type RequestStatus = "pending" | "no_match" | "processing";
 
 export interface QueueItem {
   id: string;
@@ -37,6 +37,26 @@ export interface TripInfo {
     departureTime: string;
     origin: string | null;
     dest: string | null;
+    originAddress: string | null;
+    destinationAddress: string | null;
+    originLocationSource: string | null;
+    destinationLocationSource: string | null;
+    waypoints: {
+      position: number;
+      formattedAddress: string;
+      latitude: number;
+      longitude: number;
+      locationSource: string;
+    }[];
+    originalRouteDistanceMeters: number | null;
+    originalRouteDurationSeconds: number | null;
+    originalRouteGeometry: {
+      type: "LineString";
+      coordinates: [number, number][];
+    } | null;
+    routeCalculatedAt: string | null;
+    routingProvider: string | null;
+    routeValid: boolean;
     distanceKm: number | null;
     totalSeats: number;
     availableSeats: number;

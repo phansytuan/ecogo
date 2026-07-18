@@ -19,11 +19,13 @@ class RidesService {
     required DateTime departureTime,
     required int totalSeats,
     int? pricePerSeat,
+    List<Stop> waypoints = const [],
   }) async {
     final r = await api.post('/rides', {
       'vehicleId': vehicleId,
-      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label},
-      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label},
+      'origin': stopToJson(origin),
+      'dest': stopToJson(dest),
+      if (waypoints.isNotEmpty) 'waypoints': waypoints.map(stopToJson).toList(),
       'departureTime': departureTime.toUtc().toIso8601String(),
       'totalSeats': totalSeats,
       'pricePerSeat': pricePerSeat,
@@ -51,10 +53,30 @@ class RidesService {
   }
 
   /// Suggested distance/price for the posting form (before any booking).
-  Future<RouteQuote> quote({required Stop origin, required Stop dest}) async {
+  Future<RouteQuote> quote({
+    required Stop origin,
+    required Stop dest,
+    List<Stop> waypoints = const [],
+  }) async {
     final r = await api.post('/rides/quote', {
-      'origin': {'lat': origin.lat, 'lng': origin.lng, 'label': origin.label},
-      'dest': {'lat': dest.lat, 'lng': dest.lng, 'label': dest.label},
+      'origin': stopToJson(origin),
+      'dest': stopToJson(dest),
+      if (waypoints.isNotEmpty) 'waypoints': waypoints.map(stopToJson).toList(),
+    });
+    return RouteQuote.fromJson(r as Map<String, dynamic>);
+  }
+
+  /// Change a posted ride's route (only while open/full with no active bookings).
+  Future<RouteQuote> updateRoute({
+    required String rideId,
+    required Stop origin,
+    required Stop dest,
+    List<Stop> waypoints = const [],
+  }) async {
+    final r = await api.patch('/rides/$rideId/route', {
+      'origin': stopToJson(origin),
+      'dest': stopToJson(dest),
+      if (waypoints.isNotEmpty) 'waypoints': waypoints.map(stopToJson).toList(),
     });
     return RouteQuote.fromJson(r as Map<String, dynamic>);
   }

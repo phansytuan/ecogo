@@ -7,7 +7,8 @@ class Stop {
   final double lng;
   /// Geocoding-provider reference when this stop came from an address search.
   final String? placeId;
-  const Stop(this.label, this.lat, this.lng, {this.placeId});
+  final LocationSource locationSource;
+  const Stop(this.label, this.lat, this.lng, {this.placeId, this.locationSource = LocationSource.manualAddress});
 
   // Value equality so the same logical stop is interchangeable across widgets
   // (e.g. a DropdownButton value that came from a different code path).
@@ -18,6 +19,25 @@ class Stop {
   @override
   int get hashCode => Object.hash(label, lat, lng);
 }
+
+enum LocationSource { manualAddress, currentGps, mapPin }
+
+extension LocationSourceApi on LocationSource {
+  String get apiValue => switch (this) {
+    LocationSource.manualAddress => 'MANUAL_ADDRESS',
+    LocationSource.currentGps => 'CURRENT_GPS',
+    LocationSource.mapPin => 'MAP_PIN',
+  };
+}
+
+/// GeoPointDto payload shape shared by every service that sends a [Stop].
+Map<String, dynamic> stopToJson(Stop stop) => {
+      'lat': stop.lat,
+      'lng': stop.lng,
+      'label': stop.label,
+      if (stop.placeId != null) 'placeId': stop.placeId,
+      'locationSource': stop.locationSource.apiValue,
+    };
 
 /// Corridor stops for the MVP route (Hà Tĩnh ... Bắc Giang).
 ///
