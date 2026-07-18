@@ -376,10 +376,11 @@ class _PostRideScreenState extends State<PostRideScreen> {
                     ? null
                     : () {
                         setState(() {
-                          if (label == 'Điểm đi')
+                          if (label == 'Điểm đi') {
                             _origin = null;
-                          else
+                          } else {
                             _dest = null;
+                          }
                           _quote = null;
                         });
                       }),

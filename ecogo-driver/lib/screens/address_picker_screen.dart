@@ -41,12 +41,13 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
   Future<void> search(String value, int id) async {
     final q = value.trim();
     if (q.length < 2) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           suggestions = [];
           searching = false;
           error = null;
         });
+      }
       return;
     }
     setState(() {
@@ -61,17 +62,19 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
         searching = false;
       });
     } on ApiException catch (e) {
-      if (mounted && id == request)
+      if (mounted && id == request) {
         setState(() {
           searching = false;
           error = e.friendly;
         });
+      }
     } catch (_) {
-      if (mounted && id == request)
+      if (mounted && id == request) {
         setState(() {
           searching = false;
           error = 'Không thể tìm địa chỉ lúc này';
         });
+      }
     }
   }
 
@@ -84,11 +87,12 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
       if (!mounted || id != request) return;
       Navigator.pop(context, Stop(p.address, p.lat, p.lng, placeId: p.placeId));
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           resolving = false;
           error = 'Không lấy được tọa độ. Hãy thử lại.';
         });
+      }
     }
   }
 
@@ -100,28 +104,33 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
       deniedForever = false;
     });
     try {
-      if (!await Geolocator.isLocationServiceEnabled())
+      if (!await Geolocator.isLocationServiceEnabled()) {
         throw 'Dịch vụ vị trí đang tắt.';
+      }
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied)
+      if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+      }
       if (permission == LocationPermission.deniedForever) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             deniedForever = true;
             locating = false;
             gpsError = 'Quyền vị trí bị từ chối vĩnh viễn.';
           });
+        }
         return;
       }
-      if (permission == LocationPermission.denied)
+      if (permission == LocationPermission.denied) {
         throw 'Cần quyền vị trí để tiếp tục.';
+      }
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 15),
       );
-      if (pos.accuracy > 500)
+      if (pos.accuracy > 500) {
         throw 'Vị trí có độ chính xác quá thấp (${pos.accuracy.round()} m).';
+      }
       final p = await places.reverse(pos.latitude, pos.longitude);
       if (!mounted) return;
       Navigator.pop(
@@ -129,19 +138,21 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
           Stop(p.address, pos.latitude, pos.longitude,
               placeId: p.placeId, locationSource: LocationSource.currentGps));
     } on TimeoutException {
-      if (mounted)
+      if (mounted) {
         setState(() {
           locating = false;
           gpsError = 'GPS quá thời gian. Hãy thử lại.';
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           locating = false;
           gpsError = e is ApiException
               ? 'Đã có tọa độ nhưng không tra được địa chỉ: ${e.friendly}'
               : e.toString();
         });
+      }
     }
   }
 
@@ -176,9 +187,9 @@ class _AddressPickerScreenState extends State<AddressPickerScreen> {
                 ? null
                 : Text(gpsError!, style: const TextStyle(color: Colors.red)),
             trailing: deniedForever
-                ? TextButton(
+                ? const TextButton(
                     onPressed: Geolocator.openAppSettings,
-                    child: const Text('Cài đặt'))
+                    child: Text('Cài đặt'))
                 : gpsError != null
                     ? TextButton(onPressed: gps, child: const Text('Thử lại'))
                     : null,
