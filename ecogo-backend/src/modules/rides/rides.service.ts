@@ -42,6 +42,18 @@ export class RidesService {
     const vehicle = await this.vehicles.findOwned(dto.vehicleId, driverId);
     if (!vehicle) throw new ForbiddenException('Vehicle not found or not owned by you');
 
+    if (this.config.get<boolean>('rides.requireDriverKyc')) {
+      const kyc = await this.db.one<{ kyc_status: string }>(
+        `SELECT kyc_status FROM users WHERE id = $1`,
+        [driverId],
+      );
+      if (kyc?.kyc_status !== 'verified') {
+        throw new ForbiddenException(
+          'Driver identity is not verified yet — contact the operator',
+        );
+      }
+    }
+
     const check = checkDeparture(new Date(dto.departureTime), new Date(), {
       maxBackdateMin: this.config.get<number>('rides.maxBackdateMin') ?? 60,
       maxAheadDays: this.config.get<number>('rides.maxAheadDays') ?? 30,

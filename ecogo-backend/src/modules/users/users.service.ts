@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 
 export interface UserRow {
@@ -40,5 +40,46 @@ export class UsersService {
        ) WHERE id = $1`,
       [userId, role],
     );
+  }
+  async setKycStatus(
+    actorId: string,
+    userId: string,
+    status: string,
+    reason?: string,
+  ) {
+    return this.db.tx(async (client) => {
+      const user = (
+        await client.query<{ id: string; kyc_status: string }>(
+          `SELECT id, kyc_status FROM users WHERE id = $1 FOR UPDATE`,
+          [userId],
+        )
+      ).rows[0];
+      if (!user) throw new NotFoundException('User not found');
+
+      if (user.kyc_status === status) {
+        return { id: userId, kycStatus: status, changed: false };
+      }
+
+      await client.query(
+        `UPDATE users SET kyc_status = $2 WHERE id = $1`,
+        [userId, status],
+      );
+      await client.query(
+        `INSERT INTO audit_log
+           (actor_id, action, entity_type, entity_id, details)
+         VALUES ($1, 'user.kyc.updated', 'user', $2, $3::jsonb)`,
+        [
+          actorId,
+          userId,
+          JSON.stringify({
+            oldStatus: user.kyc_status,
+            newStatus: status,
+            reason: reason ?? null,
+          }),
+        ],
+      );
+
+      return { id: userId, kycStatus: status, changed: true };
+    });
   }
 }

@@ -37,6 +37,12 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv): void {
     );
   }
 
+  if (env.REQUIRE_DRIVER_KYC !== 'true') {
+    console.warn(
+      'REQUIRE_DRIVER_KYC is not enabled in production — unverified drivers can post rides.',
+    );
+  }
+
   if (violations.length > 0) {
     throw new Error(`Invalid production configuration:\n${violations.join('\n')}`);
   }

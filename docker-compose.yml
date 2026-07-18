@@ -36,6 +36,8 @@ services:
       # for corridor sub-segment matching to find rides at intermediate cities.
       DIRECTIONS_PROVIDER: ${DIRECTIONS_PROVIDER:-fake}
       GOONG_API_KEY: ${GOONG_API_KEY:-}
+      # Gate ride posting on admin-verified KYC (enable for pilot/production).
+      REQUIRE_DRIVER_KYC: ${REQUIRE_DRIVER_KYC:-false}
       # Dispatch console (5173) + API (3000) + Flutter web dev ports (driver 5300, passenger 5301)
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:5300,http://localhost:5301
     depends_on:
