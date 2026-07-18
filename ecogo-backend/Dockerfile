@@ -1,9 +1,17 @@
-FROM node:22-slim
+FROM node:22-slim AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+
+FROM node:22-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+COPY db ./db
 EXPOSE 3000
-# db:init is idempotent (CREATE ... IF NOT EXISTS); safe to run on every boot.
-CMD ["sh", "-c", "npm run db:init && node dist/src/main.js"]
+# Idempotent init on boot is the single-VPS pilot choice. Run
+# dist/scripts/init-db.js as a separate job when moving to managed infrastructure.
+CMD ["sh", "-c", "node dist/scripts/init-db.js && exec node dist/src/main.js"]

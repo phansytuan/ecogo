@@ -43,6 +43,12 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv): void {
     );
   }
 
+  if (!env.SENTRY_DSN) {
+    console.warn(
+      'SENTRY_DSN is not set in production — errors will not be tracked.',
+    );
+  }
+
   if (violations.length > 0) {
     throw new Error(`Invalid production configuration:\n${violations.join('\n')}`);
   }

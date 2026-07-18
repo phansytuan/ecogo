@@ -9,7 +9,8 @@
     "start:dev": "nest start --watch",
     "db:init": "ts-node scripts/init-db.ts",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:init:dist": "node dist/scripts/init-db.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
@@ -23,6 +24,7 @@
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/throttler": "^6.2.1",
     "@nestjs/websockets": "^11.1.28",
+    "@sentry/node": "^8.42.0",
     "axios": "^1.7.7",
     "bullmq": "^5.21.2",
     "class-transformer": "^0.5.1",
