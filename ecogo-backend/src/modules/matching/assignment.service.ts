@@ -9,7 +9,12 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { MatchingService } from './matching.service';
-import { canFit, tightestFreeSeats } from './segment-capacity';
+import {
+  effectiveCapacity,
+  lockedSeatCount,
+  recomputeRideAvailability,
+} from './availability';
+import { canFit } from './segment-capacity';
 import { MatchRequestDto } from './matching.dto';
 import { assertPassengerAvailable } from '../bookings/passenger-availability';
 import { DetourService } from './detour.service';
@@ -180,7 +185,16 @@ export class AssignmentService {
         client, loc.passenger_id, rideId, ride.departure_time,
         ride.duration_s, newSeg.fp, newSeg.fd, bookingId,
       );
-      if (!canFit(segs, ride.total_seats, newSeg.fp, newSeg.fd, loc.seats)) {
+      const lockedSeats = await lockedSeatCount(client, rideId);
+      if (
+        !canFit(
+          segs,
+          effectiveCapacity(ride.total_seats, lockedSeats),
+          newSeg.fp,
+          newSeg.fd,
+          loc.seats,
+        )
+      ) {
         throw new ConflictException('Not enough seats on this segment');
       }
 
@@ -223,13 +237,7 @@ export class AssignmentService {
         throw new ConflictException('Request is no longer awaiting assignment');
       }
 
-      const remaining = tightestFreeSeats([...segs, newSeg], ride.total_seats);
-      await client.query(
-        `UPDATE rides SET available_seats = $2,
-                          status = CASE WHEN $2 = 0 THEN 'full' ELSE status END
-         WHERE id = $1`,
-        [rideId, remaining],
-      );
+      await recomputeRideAvailability(client, rideId);
       return bookingRes.rows[0];
     });
 
