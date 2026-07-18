@@ -503,7 +503,7 @@ export class RidesService {
         ],
       );
       await client.query(
-        `UPDATE rides SET origin_label=$2,dest_label=$3,route=ST_SetSRID(ST_GeomFromGeoJSON($4),4326),duration_s=$5,distance_m=$6,origin_formatted_address=$2,origin_latitude=$7,origin_longitude=$8,origin_place_id=$9,origin_location_source=$10,destination_formatted_address=$3,destination_latitude=$11,destination_longitude=$12,destination_place_id=$13,destination_location_source=$14,original_route_distance_meters=$6,original_route_duration_seconds=$5,original_route_polyline=$15,route_calculated_at=$16,routing_provider=$17,route_valid=true,route_revision=route_revision+1 WHERE id=$1`,
+        `UPDATE rides SET origin_label=$2,dest_label=$3,route=ST_SetSRID(ST_GeomFromGeoJSON($4),4326),duration_s=$5::int,distance_m=$6::float8,origin_formatted_address=$2,origin_latitude=$7,origin_longitude=$8,origin_place_id=$9,origin_location_source=$10,destination_formatted_address=$3,destination_latitude=$11,destination_longitude=$12,destination_place_id=$13,destination_location_source=$14,original_route_distance_meters=$6::int,original_route_duration_seconds=$5::int,original_route_polyline=$15,route_calculated_at=$16,routing_provider=$17,route_valid=true,route_revision=route_revision+1 WHERE id=$1`,
         [
           rideId,
           dto.origin.label ?? "",
