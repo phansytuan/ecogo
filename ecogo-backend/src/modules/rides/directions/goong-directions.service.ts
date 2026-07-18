@@ -1,6 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import type IORedis from 'ioredis';
 import axios from 'axios';
+import { REDIS } from '../../../redis/redis.module';
 import { DirectionsProvider, LatLng, RouteResult } from './directions.provider';
 
 const MAX_TRIES = 3;
@@ -23,7 +26,11 @@ export class GoongDirectionsService implements DirectionsProvider {
   private consecutiveFailures = 0;
   private openUntil = 0;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(REDIS) private readonly redis: IORedis,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async route(origin: LatLng, dest: LatLng, waypoints: LatLng[] = []): Promise<RouteResult> {
     const points = [origin, ...waypoints, dest];
@@ -49,6 +56,42 @@ export class GoongDirectionsService implements DirectionsProvider {
     };
   }
 
+  private async trackSpend(): Promise<void> {
+    try {
+      const budget = this.config.get<number>('directions.dailyCallBudget') ?? 0;
+      if (budget <= 0) return;
+
+      const day = new Date().toISOString().slice(0, 10);
+      const key = `goong:calls:${day}`;
+      const count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, 172_800);
+      }
+
+      if (count === Math.ceil(budget * 0.8)) {
+        this.logger.warn(
+          `Goong daily calls at 80% of budget (${count}/${budget})`,
+        );
+      }
+      if (count === budget + 1) {
+        this.logger.error(
+          `Goong daily call budget exceeded (${count - 1}/${budget})`,
+        );
+        this.events.emit('goong.budget.exceeded', {
+          day,
+          count: count - 1,
+          budget,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `goong spend tracking failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private async fetchDirection(params: Record<string, string>): Promise<any> {
     if (Date.now() < this.openUntil) {
       throw new Error('Goong circuit open — routing temporarily unavailable');
@@ -58,6 +101,7 @@ export class GoongDirectionsService implements DirectionsProvider {
 
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
       try {
+        await this.trackSpend();
         const { data } = await axios.get(
           'https://rsapi.goong.io/Direction',
           { params, timeout: 10_000 },
