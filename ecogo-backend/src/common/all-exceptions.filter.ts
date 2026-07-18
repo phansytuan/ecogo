@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import { STATUS_CODES } from 'node:http';
+import * as Sentry from '@sentry/node';
 
 /**
  * Consistent error envelope for HTTP. Unknown (non-Http) errors are logged with
@@ -35,6 +36,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
+      Sentry.captureException(exception);
     }
 
     res.status(status).json({

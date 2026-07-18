@@ -1,5 +1,11 @@
+jest.mock('@sentry/node', () => ({
+  captureException: jest.fn(),
+}));
+
 import { ArgumentsHost, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
+import { HttpException } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 
 function httpHost() {
   const response = {
@@ -41,5 +47,46 @@ describe('AllExceptionsFilter', () => {
       error: 'Bad Request',
       message: ['invalid phone'],
     }));
+  });
+});
+
+describe('AllExceptionsFilter Sentry reporting', () => {
+  const makeHost = () => {
+    const response = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    const host = {
+      getType: () => 'http',
+      switchToHttp: () => ({
+        getResponse: () => response,
+        getRequest: () => ({ url: '/x' }),
+      }),
+    };
+    return { host, response };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('captures unexpected Errors', () => {
+    const filter = new AllExceptionsFilter();
+    const error = new Error('unexpected failure');
+    const { host } = makeHost();
+
+    filter.catch(error, host as any);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it('does not capture expected HttpExceptions', () => {
+    const filter = new AllExceptionsFilter();
+    const error = new HttpException('Not found', 404);
+    const { host } = makeHost();
+
+    filter.catch(error, host as any);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });

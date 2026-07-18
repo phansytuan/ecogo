@@ -4,7 +4,7 @@ import { Client } from 'pg';
 
 async function main() {
   const url = process.env.DATABASE_URL ?? 'postgres://ecogo:ecogo@localhost:5432/ecogo';
-  const base = join(__dirname, '..');
+  const base = process.cwd();
   const client = new Client({ connectionString: url });
   await client.connect();
   try {
