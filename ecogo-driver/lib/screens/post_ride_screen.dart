@@ -25,6 +25,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
   bool _priceEdited = false;
   bool _busy = false;
   int _quoteRequest = 0;
+  final List<Stop> _waypoints = [];
 
   @override
   void initState() {
@@ -69,7 +70,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
       final q = await context
           .read<AppState>()
           .rides
-          .quote(origin: origin, dest: dest);
+          .quote(origin: origin, dest: dest, waypoints: _waypoints);
       if (!mounted || request != _quoteRequest) return;
       setState(() {
         _quote = q;
@@ -129,12 +130,15 @@ class _PostRideScreenState extends State<PostRideScreen> {
       showSnack(context, 'Giờ khởi hành đã quá hạn — chọn lại', error: true);
       return;
     }
+    final waypointLines = _waypoints.isEmpty
+        ? ''
+        : '\n${_waypoints.map((w) => '· qua ${w.label}').join('\n')}';
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
                 title: const Text('Xác nhận tuyến đường'),
                 content: Text(
-                    '${_origin!.label}\n→ ${_dest!.label}\n\n${_quote!.km.toStringAsFixed(1)} km · ${(_quote!.durationS / 60).round()} phút\n$_seats ghế · ${DateFormat('dd/MM HH:mm').format(_departure)}'),
+                    '${_origin!.label}$waypointLines\n→ ${_dest!.label}\n\n${_quote!.km.toStringAsFixed(1)} km · ${(_quote!.durationS / 60).round()} phút\n$_seats ghế · ${DateFormat('dd/MM HH:mm').format(_departure)}'),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -150,6 +154,7 @@ class _PostRideScreenState extends State<PostRideScreen> {
             vehicleId: _vehicle!.id,
             origin: _origin!,
             dest: _dest!,
+            waypoints: _waypoints,
             departureTime: _departure,
             totalSeats: _seats,
             pricePerSeat: int.tryParse(_price.text.trim()),
@@ -231,6 +236,8 @@ class _PostRideScreenState extends State<PostRideScreen> {
                 setState(() => _dest = s);
                 _fetchQuote();
               }),
+              const SizedBox(height: 12),
+              _waypointsSection(),
               const SizedBox(height: 12),
               _quoteCard(),
               const SizedBox(height: 12),
@@ -355,6 +362,59 @@ class _PostRideScreenState extends State<PostRideScreen> {
               style: TextStyle(
                   fontSize: 12, color: Colors.black.withValues(alpha: 0.7))),
         ),
+      ],
+    );
+  }
+
+
+  Widget _waypointsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < _waypoints.length; index++)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.alt_route),
+            title: Text(
+              _waypoints[index].label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              tooltip: 'Xoá điểm dừng',
+              icon: const Icon(Icons.close),
+              onPressed: _busy
+                  ? null
+                  : () {
+                      setState(() => _waypoints.removeAt(index));
+                      _fetchQuote();
+                    },
+            ),
+          ),
+        if (_waypoints.length < 3)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      final stop = await Navigator.push<Stop>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AddressPickerScreen(
+                            title: 'Chọn điểm dừng',
+                          ),
+                        ),
+                      );
+                      if (stop == null || !mounted) return;
+                      setState(() => _waypoints.add(stop));
+                      _fetchQuote();
+                    },
+              icon: const Icon(Icons.add),
+              label: const Text('Thêm điểm dừng (đi qua)'),
+            ),
+          ),
       ],
     );
   }

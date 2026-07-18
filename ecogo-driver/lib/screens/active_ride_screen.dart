@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 import '../state/app_state.dart';
 import 'chat_screen.dart';
+import 'edit_route_screen.dart';
 import '../widgets/seat_map_view.dart';
 
 class ActiveRideScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   StreamSubscription<Position>? _sub;
   bool _sharing = false;
   bool _busy = false;
+  bool _changed = false;
   final Set<String> _confirming = {};
 
   RealtimeService? _rt;
@@ -185,9 +187,38 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   @override
   Widget build(BuildContext context) {
     final r = widget.ride;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          Navigator.pop(context, (result as bool?) ?? _changed);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
-          title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}')),
+          title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}'),
+          actions: [
+            if (widget.ride.status == 'open' || widget.ride.status == 'full')
+              IconButton(
+                tooltip: 'Sửa tuyến',
+                icon: const Icon(Icons.edit_road),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        final changed = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                EditRouteScreen(ride: widget.ride),
+                          ),
+                        );
+                        if (changed == true && mounted) {
+                          _changed = true;
+                          _load();
+                        }
+                      },
+              ),
+          ]),
       body: RefreshIndicator(
         onRefresh: () async => _load(),
         child: ListView(
@@ -207,6 +238,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
