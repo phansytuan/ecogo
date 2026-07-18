@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ecogo_core/ecogo_core.dart';
 import 'package:ecogo_driver/main.dart';
 import 'package:ecogo_driver/state/app_state.dart';
 
@@ -9,12 +9,11 @@ void main() {
   // no stored session. The root uses Consumer<AppState>, so it must be wrapped
   // in the provider (pumping EcogoDriverApp bare would throw ProviderNotFoundException).
   testWidgets('boots to login when logged out', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
+    final tokens = await TokenStore.create(storage: InMemorySecureKV());
 
     await tester.pumpWidget(
       ChangeNotifierProvider(
-        create: (_) => AppState(prefs),
+        create: (_) => AppState(tokens),
         child: const EcogoDriverApp(),
       ),
     );

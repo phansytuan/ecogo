@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ecogo_core/ecogo_core.dart';
 
 class AppState extends ChangeNotifier {
@@ -16,7 +15,7 @@ class AppState extends ChangeNotifier {
   final RealtimeService realtime = RealtimeService(Config.wsBase);
   String? _pendingPushToken;
 
-  AppState(SharedPreferences prefs) : tokens = TokenStore(prefs) {
+  AppState(this.tokens) {
     api = ApiClient(
       Config.apiBase,
       tokens,

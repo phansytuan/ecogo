@@ -6,6 +6,12 @@
 
 #import "GeneratedPluginRegistrant.h"
 
+#if __has_include(<flutter_secure_storage/FlutterSecureStoragePlugin.h>)
+#import <flutter_secure_storage/FlutterSecureStoragePlugin.h>
+#else
+@import flutter_secure_storage;
+#endif
+
 #if __has_include(<geolocator_apple/GeolocatorPlugin.h>)
 #import <geolocator_apple/GeolocatorPlugin.h>
 #else
@@ -27,6 +33,7 @@
 @implementation GeneratedPluginRegistrant
 
 + (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {
+  [FlutterSecureStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterSecureStoragePlugin"]];
   [GeolocatorPlugin registerWithRegistrar:[registry registrarForPlugin:@"GeolocatorPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
   [URLLauncherPlugin registerWithRegistrar:[registry registrarForPlugin:@"URLLauncherPlugin"]];
