@@ -4,6 +4,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 interface RideReviewRow {
   id: string;
@@ -14,6 +15,7 @@ export interface CleanupResult {
   expiredRides: number;
   cancelledRequests: number;
   ridesRequiringReview: number;
+  retriedNotifications: number;
 }
 
 /**
@@ -32,6 +34,7 @@ export class MaintenanceService {
     private readonly config: ConfigService,
     private readonly realtime: RealtimeGateway,
     private readonly events: EventEmitter2,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Cron(CronExpression.EVERY_30_MINUTES)
@@ -40,10 +43,11 @@ export class MaintenanceService {
     if (
       res.expiredRides ||
       res.ridesRequiringReview ||
+      res.retriedNotifications ||
       res.cancelledRequests
     ) {
       this.logger.log(
-        `cleanup: expired ${res.expiredRides} ride(s), flagged ${res.ridesRequiringReview} ride(s) for review, cancelled ${res.cancelledRequests} stale request(s)`,
+        `cleanup: expired ${res.expiredRides} ride(s), flagged ${res.ridesRequiringReview} ride(s) for review, cancelled ${res.cancelledRequests} stale request(s), retried ${res.retriedNotifications} notification(s)`,
       );
     }
   }
@@ -124,10 +128,13 @@ export class MaintenanceService {
       this.events.emit('ride.requires_review.reminder', payload);
     }
 
+    const retriedNotifications = await this.notifications.retryUndelivered();
+
     return {
       expiredRides: expired.length,
       cancelledRequests: cancelled.length,
       ridesRequiringReview: flagged.length,
+      retriedNotifications,
     };
   }
 }

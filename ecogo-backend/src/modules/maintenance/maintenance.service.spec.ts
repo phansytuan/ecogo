@@ -8,11 +8,13 @@ describe('MaintenanceService.runCleanup', () => {
     const db = { tx: jest.fn((fn) => fn(client)) } as any;
     const realtime = { emitToDispatch: jest.fn() } as any;
     const events = { emit: jest.fn() } as any;
+    const notifications = { retryUndelivered: jest.fn().mockResolvedValue(0) } as any;
     const service = new MaintenanceService(
       db,
       config,
       realtime,
       events,
+      notifications,
     );
     return { client, realtime, events, service };
   };
@@ -43,6 +45,7 @@ describe('MaintenanceService.runCleanup', () => {
       expiredRides: 0,
       cancelledRequests: 0,
       ridesRequiringReview: 1,
+      retriedNotifications: 0,
     });
   });
 
@@ -61,6 +64,7 @@ describe('MaintenanceService.runCleanup', () => {
       expiredRides: 2,
       cancelledRequests: 0,
       ridesRequiringReview: 0,
+      retriedNotifications: 0,
     });
   });
 
@@ -87,6 +91,7 @@ describe('MaintenanceService.runCleanup', () => {
       expiredRides: 0,
       cancelledRequests: 0,
       ridesRequiringReview: 0,
+      retriedNotifications: 0,
     });
   });
 
@@ -105,6 +110,7 @@ describe('MaintenanceService.runCleanup', () => {
       expiredRides: 1,
       cancelledRequests: 2,
       ridesRequiringReview: 0,
+      retriedNotifications: 0,
     });
   });
 });
