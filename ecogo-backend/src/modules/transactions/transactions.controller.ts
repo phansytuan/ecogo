@@ -52,6 +52,19 @@ export class TransactionsController {
 
   @Post('referrals')
   refer(@CurrentUser() user: AuthUser, @Body() dto: CreateReferralDto) {
-    return this.referrals.create(user.id, dto.referredUserId);
+    return this.referrals.claim(
+      { id: user.id, roles: user.roles },
+      dto.referredUserId,
+    );
+  }
+
+  @Post('referrals/confirm')
+  confirmReferral(@CurrentUser() user: AuthUser) {
+    return this.referrals.respond(user.id, true);
+  }
+
+  @Post('referrals/reject')
+  rejectReferral(@CurrentUser() user: AuthUser) {
+    return this.referrals.respond(user.id, false);
   }
 }

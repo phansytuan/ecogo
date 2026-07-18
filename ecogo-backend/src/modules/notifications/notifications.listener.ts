@@ -42,6 +42,12 @@ interface RideStartedEvent {
   bookings: { id: string; passengerId: string }[];
 }
 
+interface ReferralClaimedEvent {
+  referralId: string;
+  driverId: string;
+  referredUserId: string;
+}
+
 @Injectable()
 export class NotificationsListener {
   constructor(private readonly notifications: NotificationsService) {}
@@ -128,5 +134,14 @@ export class NotificationsListener {
         { bookingId: booking.id },
       );
     }
+  }
+  @OnEvent('referral.claimed')
+  async onReferralClaimed(e: ReferralClaimedEvent) {
+    await this.notifications.pushToUser(
+      e.referredUserId,
+      'Xác nhận người giới thiệu',
+      'Một tài xế cho biết đã giới thiệu bạn đến ECOGO. Mở app để xác nhận hoặc từ chối.',
+      { referralId: e.referralId },
+    );
   }
 }

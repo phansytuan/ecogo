@@ -58,7 +58,10 @@ export class TransactionsService {
       let affiliate = null;
       const ref = (
         await client.query(
-          `SELECT id, pct FROM referrals WHERE referred_user_id = $1 AND now() < expires_at`,
+          `SELECT id, pct FROM referrals
+           WHERE referred_user_id = $1
+             AND status = 'confirmed'
+             AND now() < expires_at`,
           [b.passenger_id],
         )
       ).rows[0];
