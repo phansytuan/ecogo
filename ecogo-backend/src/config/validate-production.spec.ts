@@ -4,6 +4,8 @@ const validProductionEnv: NodeJS.ProcessEnv = {
   NODE_ENV: 'production',
   JWT_SECRET: 'a-secure-random-secret-that-is-longer-than-32-characters',
   OTP_PROVIDER: 'esms',
+  ESMS_API_KEY: 'test-api-key',
+  ESMS_SECRET_KEY: 'test-secret-key',
   DATABASE_URL: 'postgresql://localhost/ecogo',
   REDIS_URL: 'redis://localhost:6379',
   DIRECTIONS_PROVIDER: 'mapbox',
@@ -90,5 +92,25 @@ describe('assertProductionConfig', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+  it('requires eSMS credentials for the eSMS provider', () => {
+    expect(() =>
+      assertProductionConfig({
+        ...validProductionEnv,
+        ESMS_API_KEY: '',
+        ESMS_SECRET_KEY: '',
+      }),
+    ).toThrow('ESMS_API_KEY');
+  });
+
+  it('accepts the eSMS provider when both credentials are set', () => {
+    expect(() =>
+      assertProductionConfig({
+        ...validProductionEnv,
+        OTP_PROVIDER: 'esms',
+        ESMS_API_KEY: 'production-api-key',
+        ESMS_SECRET_KEY: 'production-secret-key',
+      }),
+    ).not.toThrow();
   });
 });

@@ -3,9 +3,11 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type IORedis from 'ioredis';
 import { REDIS } from '../../redis/redis.module';
+import { SMS_SENDER, SmsSender } from './sms.provider';
 
 interface OtpEntry {
   code: string;
@@ -23,7 +25,10 @@ const RESEND_COOLDOWN_S = 60;
  */
 @Injectable()
 export class OtpService {
-  constructor(@Inject(REDIS) private readonly redis: IORedis) {}
+  constructor(
+    @Inject(REDIS) private readonly redis: IORedis,
+    @Inject(SMS_SENDER) private readonly sms: SmsSender,
+  ) {}
 
   async issue(
     phone: string,
@@ -51,6 +56,15 @@ export class OtpService {
       'EX',
       CODE_TTL_S,
     );
+
+    const message = `ECOGO: Ma xac thuc cua ban la ${code}. Hieu luc 5 phut.`;
+    try {
+      await this.sms.send(phone, message);
+    } catch {
+      await this.redis.del(cooldownKey).catch(() => {});
+      await this.redis.del(codeKey).catch(() => {});
+      throw new ServiceUnavailableException('Khong gui duoc SMS — thu lai sau');
+    }
 
     return {
       code,

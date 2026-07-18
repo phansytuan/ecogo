@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { OtpService } from './otp.service';
 import { JwtStrategy } from './jwt.strategy';
+import { EsmsSender, FakeSmsSender, SMS_SENDER } from './sms.provider';
 
 @Module({
   imports: [
@@ -21,6 +22,21 @@ import { JwtStrategy } from './jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, OtpService, JwtStrategy],
+  providers: [
+    AuthService,
+    OtpService,
+    JwtStrategy,
+    FakeSmsSender,
+    EsmsSender,
+    {
+      provide: SMS_SENDER,
+      inject: [ConfigService, FakeSmsSender, EsmsSender],
+      useFactory: (
+        config: ConfigService,
+        fake: FakeSmsSender,
+        esms: EsmsSender,
+      ) => (config.get<string>('otpProvider') === 'esms' ? esms : fake),
+    },
+  ],
 })
 export class AuthModule {}
