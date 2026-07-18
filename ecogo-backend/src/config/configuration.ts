@@ -17,6 +17,7 @@ export default () => ({
     goongApiKey: process.env.GOONG_API_KEY ?? '',
     cachePrecision: parseInt(process.env.DIRECTIONS_CACHE_PRECISION ?? '4', 10),
     cacheTtlS: parseInt(process.env.DIRECTIONS_CACHE_TTL_S ?? '2592000', 10),
+    dailyCallBudget: parseInt(process.env.GOONG_DAILY_CALL_BUDGET ?? '0', 10),
   },
   rides: {
     maxBackdateMin: parseInt(process.env.RIDES_MAX_BACKDATE_MIN ?? '60', 10),

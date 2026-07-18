@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { OnEvent } from "@nestjs/event-emitter";
 import { isUUID } from "class-validator";
 import {
   ConnectedSocket,
@@ -175,6 +176,18 @@ export class RealtimeGateway implements OnGatewayConnection {
 
   emitToDispatch(event: string, payload: unknown) {
     this.server?.to("dispatch").emit(event, payload);
+  }
+
+  @OnEvent("goong.budget.exceeded")
+  onGoongBudgetExceeded(payload: {
+    day: string;
+    count: number;
+    budget: number;
+  }) {
+    this.logger.warn(
+      `Goong budget exceeded: ${payload.count}/${payload.budget} (${payload.day})`,
+    );
+    this.emitToDispatch("goong.budget.exceeded", payload);
   }
 
   emitToChat(bookingId: string, event: string, payload: unknown) {

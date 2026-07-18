@@ -33,7 +33,15 @@ describe('GoongDirectionsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getMock = axios.get as unknown as jest.Mock;
-    service = new GoongDirectionsService({ get: () => 'test-key' } as any);
+    const configStub = {
+      get: (key: string) =>
+        key === 'directions.dailyCallBudget' ? 0 : 'test-key',
+    };
+    service = new GoongDirectionsService(
+      configStub as any,
+      { incr: jest.fn().mockResolvedValue(1), expire: jest.fn().mockResolvedValue(1) } as any,
+      { emit: jest.fn() } as any,
+    );
     sleepMock = jest.fn().mockResolvedValue(undefined);
     (service as any).sleep = sleepMock;
     jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
@@ -110,5 +118,91 @@ describe('GoongDirectionsService', () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+});
+
+describe('Goong budget guard', () => {
+  const origin = { lat: 10.77, lng: 106.69 };
+  const dest = { lat: 10.78, lng: 106.7 };
+  let getMock: jest.Mock;
+  let redisMock: { incr: jest.Mock; expire: jest.Mock };
+  let eventsMock: { emit: jest.Mock };
+
+  const buildService = (budget: number) => {
+    const config = {
+      get: (key: string) =>
+        key === 'directions.dailyCallBudget' ? budget : 'test-key',
+    };
+    const service = new GoongDirectionsService(
+      config as any,
+      redisMock as any,
+      eventsMock as any,
+    );
+    (service as any).sleep = jest.fn().mockResolvedValue(undefined);
+    return service;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getMock = axios.get as unknown as jest.Mock;
+    getMock.mockResolvedValue(successfulResponse);
+    redisMock = {
+      incr: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+    };
+    eventsMock = { emit: jest.fn() };
+  });
+
+  it('warns once when usage reaches 80 percent', async () => {
+    redisMock.incr.mockResolvedValue(8);
+    const service = buildService(10);
+    const warn = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(service.route(origin, dest)).resolves.toBeDefined();
+
+    expect(warn).toHaveBeenCalledWith(
+      'Goong daily calls at 80% of budget (8/10)',
+    );
+    expect(eventsMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('logs and alerts dispatch after the budget is exceeded', async () => {
+    redisMock.incr.mockResolvedValue(11);
+    const service = buildService(10);
+    const error = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(service.route(origin, dest)).resolves.toBeDefined();
+
+    expect(error).toHaveBeenCalledWith(
+      'Goong daily call budget exceeded (10/10)',
+    );
+    expect(eventsMock.emit).toHaveBeenCalledWith('goong.budget.exceeded', {
+      day: expect.any(String),
+      count: 10,
+      budget: 10,
+    });
+  });
+
+  it('does not break routing when Redis tracking fails', async () => {
+    redisMock.incr.mockRejectedValue(new Error('Redis unavailable'));
+    const service = buildService(10);
+    jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(service.route(origin, dest)).resolves.toBeDefined();
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not touch Redis when the budget guard is disabled', async () => {
+    const service = buildService(0);
+
+    await expect(service.route(origin, dest)).resolves.toBeDefined();
+
+    expect(redisMock.incr).not.toHaveBeenCalled();
   });
 });
