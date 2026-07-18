@@ -8,7 +8,12 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DatabaseService } from '../../database/database.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { canFit, tightestFreeSeats } from '../matching/segment-capacity';
+import {
+  effectiveCapacity,
+  lockedSeatCount,
+  recomputeRideAvailability,
+} from '../matching/availability';
+import { canFit } from '../matching/segment-capacity';
 import { DetourService } from '../matching/detour.service';
 import { fareForDistanceM } from '../pricing/pricing';
 import { validateManifest } from './manifest';
@@ -134,7 +139,16 @@ export class BookingsService {
         client, passengerId, dto.rideId, ride.departure_time,
         ride.duration_s, newSeg.fp, newSeg.fd,
       );
-      if (!canFit(existing, ride.total_seats, newSeg.fp, newSeg.fd, seats)) {
+      const lockedSeats = await lockedSeatCount(client, dto.rideId);
+      if (
+        !canFit(
+          existing,
+          effectiveCapacity(ride.total_seats, lockedSeats),
+          newSeg.fp,
+          newSeg.fd,
+          seats,
+        )
+      ) {
         throw new ConflictException('Not enough seats on this segment');
       }
 
@@ -230,32 +244,7 @@ export class BookingsService {
         booking.seat_ids = seatIds;
       }
 
-      // available_seats reflects the seat map when a ride has one; otherwise the
-      // segment-capacity remaining count.
-      const hasSeatMap =
-        (
-          await client.query(`SELECT 1 FROM ride_seats WHERE ride_id = $1 LIMIT 1`, [
-            dto.rideId,
-          ])
-        ).rowCount! > 0;
-      if (hasSeatMap) {
-        await client.query(
-          `UPDATE rides SET available_seats =
-             (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free'),
-             status = CASE WHEN (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free') = 0
-                           THEN 'full' ELSE status END
-           WHERE id = $1`,
-          [dto.rideId],
-        );
-      } else {
-        const remaining = tightestFreeSeats([...existing, newSeg], ride.total_seats);
-        await client.query(
-          `UPDATE rides SET available_seats = $2,
-                            status = CASE WHEN $2 = 0 THEN 'full' ELSE status END
-           WHERE id = $1`,
-          [dto.rideId, remaining],
-        );
-      }
+      await recomputeRideAvailability(client, dto.rideId);
       return { ...booking, companions };
     });
     this.realtime.emitToRide(dto.rideId, 'seatmap.updated', { rideId: dto.rideId });
@@ -357,47 +346,10 @@ export class BookingsService {
         [row.ride_id, bookingId],
       );
 
-      // If this ride uses a seat map, availability is the free-seat count;
-      // otherwise fall back to per-segment capacity.
-      const hasSeatMap =
-        (
-          await client.query(`SELECT 1 FROM ride_seats WHERE ride_id = $1 LIMIT 1`, [
-            row.ride_id,
-          ])
-        ).rowCount! > 0;
-      if (hasSeatMap) {
-        await client.query(
-          `UPDATE rides SET available_seats =
-             (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free'),
-             status = CASE WHEN status = 'full'
-                            AND (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free') > 0
-                           THEN 'open' ELSE status END
-           WHERE id = $1`,
-          [row.ride_id],
-        );
-        this.realtime.emitToRide(row.ride_id, 'seatmap.updated', { rideId: row.ride_id });
-        return base;
-      }
-
-      // Recompute availability from the remaining active bookings and reopen if needed.
-      const remaining = (
-        await client.query(
-          `SELECT fp, fd, seats FROM bookings
-           WHERE ride_id = $1 AND status IN ('matched','confirmed','ongoing')`,
-          [row.ride_id],
-        )
-      ).rows.map((b: { fp: string; fd: string; seats: number }) => ({
-        fp: Number(b.fp),
-        fd: Number(b.fd),
-        seats: b.seats,
-      }));
-      const free = tightestFreeSeats(remaining, row.total_seats);
-      await client.query(
-        `UPDATE rides SET available_seats = $2,
-                          status = CASE WHEN status = 'full' AND $2 > 0 THEN 'open' ELSE status END
-         WHERE id = $1`,
-        [row.ride_id, free],
-      );
+      this.realtime.emitToRide(row.ride_id, 'seatmap.updated', {
+        rideId: row.ride_id,
+      });
+      await recomputeRideAvailability(client, row.ride_id);
       return base;
     });
 

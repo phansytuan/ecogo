@@ -43,6 +43,7 @@ function ctx(activeBookingIds: string[] = []): RideStopContext {
 interface TxWorld {
   ride?: Partial<Record<string, unknown>>;
   activeBookings?: { id: string; fp: string; fd: string; seats: number }[];
+  lockedSeats?: number;
 }
 
 function fakeClient(world: TxWorld) {
@@ -77,7 +78,14 @@ function fakeClient(world: TxWorld) {
         };
       }
       if (/SELECT 1 FROM ride_seats/.test(sql)) return { rows: [], rowCount: 0 };
-      if (/UPDATE rides SET available_seats/.test(sql)) return { rows: [], rowCount: 1 };
+      if (/SELECT total_seats FROM rides/.test(sql)) return { rows: [ride] };
+      if (/AS locked/.test(sql)) {
+        return { rows: [{ locked: world.lockedSeats ?? 0 }], rowCount: 1 };
+      }
+      if (/SELECT fp, fd, seats FROM bookings/.test(sql)) {
+        return { rows: world.activeBookings ?? [] };
+      }
+      if (/UPDATE rides/.test(sql)) return { rows: [], rowCount: 1 };
       throw new Error(`Unstubbed query: ${sql}`);
     }),
   };
@@ -187,6 +195,17 @@ describe('BookingsService.create (detour revalidation + fare snapshot)', () => {
       world: {
         ride: { total_seats: 1 },
         activeBookings: [{ id: 'b-1', fp: '0.1', fd: '0.9', seats: 1 }],
+      },
+    });
+    await expect(svc.create('pax-1', DTO)).rejects.toThrow(/Not enough seats/);
+  });
+
+  it('locked seats reduce bookable capacity', async () => {
+    const { svc } = makeService({
+      world: {
+        ride: { total_seats: 2, available_seats: 2 },
+        activeBookings: [],
+        lockedSeats: 2,
       },
     });
     await expect(svc.create('pax-1', DTO)).rejects.toThrow(/Not enough seats/);

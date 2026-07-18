@@ -23,6 +23,7 @@ import { buildItinerary, etaOffsetsFromLegs } from './itinerary';
 import { canAcceptCharter, isCharterAvailable } from './charter';
 import { checkDeparture } from './departure';
 import { seatLayout } from './seat-layout';
+import { recomputeRideAvailability } from '../matching/availability';
 
 const RIDE_START_EARLY_MIN = 30;
 
@@ -212,14 +213,9 @@ export class RidesService {
     });
   }
 
-  /** available_seats = count of free seats (single source of truth). */
+  /** Delegate availability accounting to the shared segment-capacity helper. */
   private async recomputeAvailability(client: import('pg').PoolClient, rideId: string) {
-    await client.query(
-      `UPDATE rides SET available_seats =
-         (SELECT count(*) FROM ride_seats WHERE ride_id = $1 AND status = 'free')
-       WHERE id = $1`,
-      [rideId],
-    );
+    await recomputeRideAvailability(client, rideId);
   }
 
   private async seatMapTx(client: import('pg').PoolClient, rideId: string) {
