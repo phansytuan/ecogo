@@ -52,6 +52,11 @@ class RidesService {
     await api.post('/rides/$rideId/complete');
   }
 
+  /// Driver starts the trip: ride and active bookings become 'ongoing'.
+  Future<void> start(String rideId) async {
+    await api.post('/rides/$rideId/start');
+  }
+
   /// Suggested distance/price for the posting form (before any booking).
   Future<RouteQuote> quote({
     required Stop origin,
