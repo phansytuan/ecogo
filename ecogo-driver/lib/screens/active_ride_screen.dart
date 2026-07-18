@@ -26,6 +26,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
   bool _sharing = false;
   bool _busy = false;
   bool _changed = false;
+  late String _status = widget.ride.status;
   final Set<String> _confirming = {};
 
   RealtimeService? _rt;
@@ -129,6 +130,35 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
     return ok ?? false;
   }
 
+  Future<void> _startRide() async {
+    final confirmed = await _confirmDialog(
+      'Bắt đầu chuyến?',
+      'Khách và điều phối sẽ được thông báo chuyến đã khởi hành. '
+          'Vị trí trực tiếp tiếp tục hoạt động trong suốt chuyến.',
+      'Bắt đầu',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<AppState>().rides.start(widget.ride.id);
+      if (!mounted) return;
+      setState(() {
+        _status = 'ongoing';
+        _changed = true;
+      });
+      showSnack(context, 'Đã bắt đầu chuyến');
+    } on ApiException catch (error) {
+      if (mounted) showSnack(context, error.friendly, error: true);
+    } catch (_) {
+      if (mounted) {
+        showSnack(context, 'Không bắt đầu được chuyến', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _completeRide() async {
     final ok = await _confirmDialog(
       'Hoàn thành chuyến?',
@@ -198,7 +228,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       appBar: AppBar(
           title: Text('${r.originLabel ?? '—'} → ${r.destLabel ?? '—'}'),
           actions: [
-            if (widget.ride.status == 'open' || widget.ride.status == 'full')
+            if (_status == 'open' || _status == 'full')
               IconButton(
                 tooltip: 'Sửa tuyến',
                 icon: const Icon(Icons.edit_road),
@@ -251,34 +281,79 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       );
 
   Widget _actionBar() {
-    final active = widget.ride.status == 'open' || widget.ride.status == 'full';
-    if (!active) {
+    if (_status == 'open' || _status == 'full') {
+      final startAt = widget.ride.departureTime
+          .toLocal()
+          .subtract(const Duration(minutes: 30));
+      final canStart = DateTime.now().isAfter(startAt);
+
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Center(
-          child: StatusChip(widget.ride.status),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
+              onPressed: canStart && !_busy ? _startRide : null,
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.play_arrow),
+              label: const Text('Bắt đầu chuyến'),
+            ),
+            if (!canStart) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Có thể bắt đầu từ ${DateFormat('HH:mm').format(startAt)}',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _cancelRide,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFB23B2E),
+                      side: const BorderSide(color: Color(0xFFB23B2E)),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    icon: const Icon(Icons.close, size: 18),
+                    label: const Text('Huỷ chuyến'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _completeRide,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.check, size: 18),
+                    label: const Text('Hoàn thành'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       );
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _busy ? null : _cancelRide,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFB23B2E),
-                side: const BorderSide(color: Color(0xFFB23B2E)),
-                minimumSize: const Size.fromHeight(48),
-              ),
-              icon: const Icon(Icons.close, size: 18),
-              label: const Text('Huỷ chuyến'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton.icon(
+
+    if (_status == 'ongoing') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
               onPressed: _busy ? null : _completeRide,
               icon: _busy
                   ? const SizedBox(
@@ -289,9 +364,16 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                   : const Icon(Icons.check, size: 18),
               label: const Text('Hoàn thành'),
             ),
-          ),
-        ],
-      ),
+            const SizedBox(height: 8),
+            Center(child: StatusChip(_status)),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Center(child: StatusChip(_status)),
     );
   }
 
@@ -366,7 +448,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
 
   Widget _gpsCard() {
     final rideActive =
-        widget.ride.status == 'open' || widget.ride.status == 'full';
+        _status == 'open' || _status == 'full' || _status == 'ongoing';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Material(
